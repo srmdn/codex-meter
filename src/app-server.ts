@@ -127,7 +127,7 @@ async function requestRateLimits(options: { timeoutMs?: number }): Promise<AppSe
     let stderr = "";
     let settled = false;
     const timeout = setTimeout(() => {
-      finish(new SafeError("usage: app-server timeout"));
+      finish(new SafeError("usage: app-server slow or timed out; retry in a moment"));
     }, timeoutMs);
 
     const finish = (error: Error | null, value?: AppServerRateLimitsResponse) => {
@@ -158,10 +158,10 @@ async function requestRateLimits(options: { timeoutMs?: number }): Promise<AppSe
     child.on("close", () => {
       if (settled) return;
       if (stderr.includes("failed to initialize")) {
-        finish(new SafeError("usage: unavailable from app-server"));
+        finish(new SafeError("usage: unavailable from app-server; startup may need more time"));
         return;
       }
-      finish(new SafeError("usage: unavailable from app-server"));
+      finish(new SafeError("usage: unavailable from app-server; startup may need more time"));
     });
 
     writeJsonLine(child.stdin, {

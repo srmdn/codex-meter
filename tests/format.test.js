@@ -50,3 +50,7 @@ test("usage output formats normalized windows", async () => {
   assert.match(formatUsage(normalizeRateLimits(data), "UTC"), /weekly: .*16% left/);
   assert.match(formatUsage(normalizeRateLimits(data), "UTC"), /available reset credits: 4/);
 });
+
+test("usage fallback explains slow startup", () => {
+  assert.match(formatUsage(null, "UTC"), /run `codex-meter usage` again/);
+});

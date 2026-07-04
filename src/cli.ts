@@ -25,6 +25,7 @@ function parseArgs(argv: string[]): CliOptions {
     cacheTtlSeconds: 300,
     authPath: process.env.CODEX_METER_AUTH_FILE || defaultAuthPath()
   };
+  const commands: CliOptions["command"][] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -33,8 +34,15 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--cache-ttl") options.cacheTtlSeconds = Number(requireValue(argv, ++i, "--cache-ttl"));
     else if (arg === "--auth-file") options.authPath = requireValue(argv, ++i, "--auth-file");
     else if (arg === "--help" || arg === "-h") options.help = true;
-    else if (arg === "resets" || arg === "usage" || arg === "doctor") options.command = arg;
+    else if (arg === "resets" || arg === "usage" || arg === "doctor") {
+      commands.push(arg);
+      options.command = arg;
+    }
     else throw new SafeError(`unknown argument: ${arg}`);
+  }
+
+  if (commands.length > 1) {
+    throw new SafeError(`command: expected one command, got ${commands.join(" and ")}`);
   }
 
   if (!Number.isFinite(options.cacheTtlSeconds) || options.cacheTtlSeconds < 0) {
@@ -101,7 +109,7 @@ async function run(options: CliOptions): Promise<string> {
 
 function toJsonOutputRateLimits(usage: UsageSnapshot, timezone: string): NonNullable<ReturnType<typeof toJsonOutput>["rate_limits"]> {
   const rateLimits = toJsonOutput({ credits: [], available_count: 0 }, timezone, { hit: false, ageSeconds: 0, path: "" }, usage).rate_limits;
-  if (!rateLimits) throw new SafeError("usage: unavailable from app-server");
+  if (!rateLimits) throw new SafeError("usage: unavailable from app-server; startup may need more time");
   return rateLimits;
 }
 

@@ -163,12 +163,14 @@ export function formatDurationUntilTime(value: string | number | undefined | nul
 export function formatDefault(data: ResetCreditsResponse, timezone: string, usage: UsageSnapshot | null = null): string {
   const next = codexAvailableCredits(data)[0];
   const nextText = next ? `next expires ${formatShort(next.expires_at, timezone)} ${timezoneAbbreviation(timezone, next.expires_at ? new Date(next.expires_at) : new Date())}` : "none expiring";
-  const usageText = usage && usage.windows.length > 0 ? formatUsageInline(usage, timezone) : "usage: unavailable";
+  const usageText = usage && usage.windows.length > 0 ? formatUsageInline(usage, timezone) : "usage: unavailable (app-server did not respond in time; run `codex-meter` again)";
   return `◆ Codex${formatPlanSuffix(usage)}\n${usageText} │ resets: ${data.available_count}, ${nextText}`;
 }
 
 export function formatUsage(usage: UsageSnapshot | null, timezone: string): string {
-  if (!usage || usage.windows.length === 0) return "usage: unavailable from app-server";
+  if (!usage || usage.windows.length === 0) {
+    return "usage: unavailable from app-server (did not respond in time; run `codex-meter usage` again)";
+  }
   const lines = [`Timezone: ${timezoneLabel(timezone)}`];
   for (const window of usage.windows) {
     lines.push(formatWindow(window, timezone));
