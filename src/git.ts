@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { basename } from "node:path";
 
 function runGit(args: string[]): Promise<string> {
   return new Promise((resolve) => {
@@ -16,6 +17,6 @@ export async function repoBranchLabel(): Promise<string | null> {
   const root = await runGit(["rev-parse", "--show-toplevel"]);
   const branch = await runGit(["branch", "--show-current"]);
   if (!root && !branch) return null;
-  const repo = root ? root.split("/").filter(Boolean).at(-1) : "repo";
+  const repo = root ? basename(root) : "repo";
   return [repo, branch].filter(Boolean).join(" ");
 }
