@@ -2,7 +2,7 @@
 
 Terminal quota meter for OpenAI Codex.
 
-v0.1 reads local Codex ChatGPT auth, fetches reset-credit count and expiry data, formats expiry times in local timezone, and supports JSON output.
+v0.2 reads local Codex usage windows through `codex app-server`, reads reset-credit expiry data through the ChatGPT reset-credit endpoint, formats times in local timezone, and supports JSON output.
 
 ## Usage
 
@@ -15,11 +15,11 @@ node dist/cli.js doctor
 node dist/cli.js --timezone UTC
 ```
 
-Default output when usage-window data is not implemented yet:
+Default output:
 
 ```text
 ◆ Codex │ repo main
-usage: unavailable │ resets: 4, next expires Jul 12, 10:55
+5h: ▰▰▱▱▱ 46% left, resets Jul 4 14:06 (2h 37m) │ weekly: ▰▱▱▱▱ 13% left, resets Jul 7 09:34 (2d 22h) │ resets: 4, next expires Jul 12 10:55
 ```
 
 ## Security Model
@@ -28,6 +28,7 @@ usage: unavailable │ resets: 4, next expires Jul 12, 10:55
 - Reads existing Codex auth from `~/.codex/auth.json`.
 - Never asks for passwords.
 - Never prints access tokens, refresh tokens, id tokens, API keys, cookies, or raw auth payloads.
+- Uses `codex app-server --stdio` for usage-window data.
 - Sends network requests only to the ChatGPT reset-credit endpoint needed for reset-credit expiry data.
 - Does not auto-redeem reset credits.
 - Uses a short-lived cache in the system temp directory.
@@ -51,7 +52,7 @@ codex-meter doctor
 codex-meter --timezone Asia/Jakarta
 ```
 
-`usage` is a placeholder in v0.1. v0.2 should use `codex app-server` for 5-hour and weekly usage windows.
+`usage` uses `codex app-server --stdio` for 5-hour and weekly usage windows. If app-server is unavailable, the default command still shows reset-credit data when possible.
 
 ## Development
 

@@ -2,10 +2,10 @@
 import { access } from "node:fs/promises";
 import { readAuth, defaultAuthPath } from "./auth.js";
 import { SafeError, toSafeError } from "./errors.js";
-import { detectTimezone, formatDefault, formatResets, toJsonOutput, validateTimezone } from "./format.js";
+import { detectTimezone, formatDefault, formatResets, formatUsage, toJsonOutput, validateTimezone } from "./format.js";
 import { repoBranchLabel } from "./git.js";
 import { fetchResetCredits } from "./reset-credits.js";
-import { readUsageSnapshot } from "./app-server.js";
+import { readUsageSnapshot, type UsageSnapshot } from "./app-server.js";
 
 type CliOptions = {
   command: "default" | "resets" | "usage" | "doctor";
@@ -52,7 +52,7 @@ function requireValue(argv: string[], index: number, flag: string): string {
 
 function helpText(): string {
   return [
-    "codex-meter v0.1.1",
+    "codex-meter v0.2.0",
     "",
     "Usage:",
     "  codex-meter [--json] [--timezone IANA_ZONE]",
@@ -71,18 +71,23 @@ async function run(options: CliOptions): Promise<string> {
     return helpText();
   }
   if (options.command === "usage") {
-    await readUsageSnapshot();
-    return "usage: unavailable from app-server";
+    const usage = await safeReadUsage();
+    if (options.json) {
+      return JSON.stringify({ timezone: options.timezone, rate_limits: usage ? toJsonOutputRateLimits(usage, options.timezone) : null }, null, 2);
+    }
+    return formatUsage(usage, options.timezone);
   }
   if (options.command === "doctor") {
     return doctor(options);
   }
 
   const auth = await readAuth(options.authPath);
+  const usagePromise = options.command === "default" ? safeReadUsage() : Promise.resolve(null);
   const result = await fetchResetCredits(auth.accessToken, { cacheTtlSeconds: options.cacheTtlSeconds });
+  const usage = await usagePromise;
 
   if (options.json) {
-    return JSON.stringify(toJsonOutput(result.data, options.timezone, result.cache), null, 2);
+    return JSON.stringify(toJsonOutput(result.data, options.timezone, result.cache, usage), null, 2);
   }
 
   if (options.command === "resets") {
@@ -91,7 +96,21 @@ async function run(options: CliOptions): Promise<string> {
 
   const repo = await repoBranchLabel();
   const header = repo ? `◆ Codex │ ${repo}` : "◆ Codex";
-  return formatDefault(result.data, options.timezone).replace("◆ Codex", header);
+  return formatDefault(result.data, options.timezone, usage).replace("◆ Codex", header);
+}
+
+function toJsonOutputRateLimits(usage: UsageSnapshot, timezone: string): NonNullable<ReturnType<typeof toJsonOutput>["rate_limits"]> {
+  const rateLimits = toJsonOutput({ credits: [], available_count: 0 }, timezone, { hit: false, ageSeconds: 0, path: "" }, usage).rate_limits;
+  if (!rateLimits) throw new SafeError("usage: unavailable from app-server");
+  return rateLimits;
+}
+
+async function safeReadUsage(): Promise<UsageSnapshot | null> {
+  try {
+    return await readUsageSnapshot();
+  } catch {
+    return null;
+  }
 }
 
 async function doctor(options: CliOptions): Promise<string> {
@@ -115,6 +134,13 @@ async function doctor(options: CliOptions): Promise<string> {
   try {
     validateTimezone(options.timezone);
     lines.push(`timezone: ok (${options.timezone})`);
+  } catch (error) {
+    lines.push(toSafeError(error).message);
+  }
+
+  try {
+    await readUsageSnapshot();
+    lines.push("app-server: reachable");
   } catch (error) {
     lines.push(toSafeError(error).message);
   }
