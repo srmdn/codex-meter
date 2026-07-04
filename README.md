@@ -2,7 +2,9 @@
 
 Terminal quota meter for OpenAI Codex.
 
-v0.2 reads local Codex usage windows through `codex app-server`, reads reset-credit expiry data through the ChatGPT reset-credit endpoint, formats times in local timezone, and supports JSON output.
+v0.3 reads local Codex usage windows through `codex app-server`, reads reset-credit expiry data through the ChatGPT reset-credit endpoint, formats times in local timezone, and supports JSON output.
+
+The default command is cache-first for speed. Use `--live` to force fresh reads.
 
 ## Usage
 
@@ -13,6 +15,7 @@ node dist/cli.js --json
 node dist/cli.js resets
 node dist/cli.js doctor
 node dist/cli.js --timezone UTC
+node dist/cli.js --live
 ```
 
 Default output:
@@ -50,6 +53,7 @@ codex-meter resets
 codex-meter usage
 codex-meter doctor
 codex-meter --timezone Asia/Jakarta
+codex-meter --live
 ```
 
 `usage` includes detected timezone context:
@@ -70,6 +74,8 @@ Reset credits: 4 available
 ```
 
 `usage` uses `codex app-server --stdio` for 5-hour and weekly usage windows. If app-server is unavailable, the default command still shows reset-credit data when possible.
+
+By default, `codex-meter` prefers cached usage data for a fast terminal response. `--live` bypasses cache and forces fresh app-server and reset-credit reads.
 
 ## Development
 

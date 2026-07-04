@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { normalizeRateLimits } from "../dist/app-server.js";
+import { normalizeRateLimits, readAnyCachedUsageSnapshot, readCachedUsageSnapshot, writeUsageSnapshotToCache } from "../dist/app-server.js";
 
 test("normalizeRateLimits labels 5h and weekly windows", async () => {
   const data = JSON.parse(await readFile("tests/fixtures/rate-limits.synthetic.json", "utf8"));
@@ -16,4 +16,14 @@ test("normalizeRateLimits labels 5h and weekly windows", async () => {
       ["weekly", "weekly", 16]
     ]
   );
+});
+
+test("usage snapshot cache helpers round-trip normalized usage", async () => {
+  const data = JSON.parse(await readFile("tests/fixtures/rate-limits.synthetic.json", "utf8"));
+  const usage = normalizeRateLimits(data);
+  await writeUsageSnapshotToCache(usage);
+  const fresh = await readCachedUsageSnapshot(300);
+  const stale = await readAnyCachedUsageSnapshot();
+  assert.equal(fresh?.data.planType, "plus");
+  assert.equal(stale?.data.limitId, "codex");
 });

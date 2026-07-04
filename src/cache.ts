@@ -19,16 +19,22 @@ export function cachePath(key: string): string {
   return join(tmpdir(), "codex-meter", `${hash}.json`);
 }
 
-export async function readCache<T>(key: string, ttlSeconds: number): Promise<{ value: T; meta: CacheMeta } | null> {
+export async function readCacheEntry<T>(key: string): Promise<{ value: T; meta: CacheMeta } | null> {
   const path = cachePath(key);
   try {
     const envelope = JSON.parse(await readFile(path, "utf8")) as CacheEnvelope<T>;
     const ageSeconds = Math.max(0, Math.floor((Date.now() - envelope.savedAt) / 1000));
-    if (ageSeconds > ttlSeconds) return null;
     return { value: envelope.value, meta: { hit: true, ageSeconds, path } };
   } catch {
     return null;
   }
+}
+
+export async function readCache<T>(key: string, ttlSeconds: number): Promise<{ value: T; meta: CacheMeta } | null> {
+  const cached = await readCacheEntry<T>(key);
+  if (!cached) return null;
+  if (cached.meta.ageSeconds > ttlSeconds) return null;
+  return cached;
 }
 
 export async function writeCache<T>(key: string, value: T): Promise<CacheMeta> {

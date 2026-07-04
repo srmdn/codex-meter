@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readCache, readCacheEntry, writeCache, type CacheMeta } from "./cache.js";
 import { SafeError, toSafeError } from "./errors.js";
 
 export type RateLimitWindow = {
@@ -39,6 +40,12 @@ export type UsageSnapshot = {
   windows: NormalizedRateLimitWindow[];
 };
 
+export type UsageSnapshotResult = {
+  data: UsageSnapshot;
+  cache: CacheMeta;
+  source: "network" | "cache" | "stale-cache";
+};
+
 type JsonRpcMessage = {
   id?: number | string;
   method?: string;
@@ -49,9 +56,65 @@ type JsonRpcMessage = {
   };
 };
 
+const USAGE_CACHE_KEY = "codex-meter:usage-snapshot:v1";
+
 export async function readUsageSnapshot(options: { timeoutMs?: number } = {}): Promise<UsageSnapshot> {
   const response = await requestRateLimitsWithRetry(options);
   return normalizeRateLimits(response);
+}
+
+export async function getUsageSnapshot(
+  options: {
+    timeoutMs?: number;
+    cacheTtlSeconds?: number;
+    useCache?: boolean;
+    allowStaleOnError?: boolean;
+  } = {}
+): Promise<UsageSnapshotResult> {
+  const cacheTtlSeconds = options.cacheTtlSeconds ?? 30;
+  if (options.useCache !== false) {
+    const cached = await readCache<UsageSnapshot>(USAGE_CACHE_KEY, cacheTtlSeconds);
+    if (cached) {
+      return { data: cached.value, cache: cached.meta, source: "cache" };
+    }
+  }
+
+  try {
+    const usage = await readUsageSnapshot({ timeoutMs: options.timeoutMs });
+    return { data: usage, cache: await writeCache(USAGE_CACHE_KEY, usage), source: "network" };
+  } catch (error) {
+    if (options.allowStaleOnError) {
+      const stale = await readCacheEntry<UsageSnapshot>(USAGE_CACHE_KEY);
+      if (stale) {
+        return { data: stale.value, cache: stale.meta, source: "stale-cache" };
+      }
+    }
+    throw error;
+  }
+}
+
+export async function readCachedUsageSnapshot(ttlSeconds: number): Promise<UsageSnapshotResult | null> {
+  const cached = await readCache<UsageSnapshot>(USAGE_CACHE_KEY, ttlSeconds);
+  if (!cached) return null;
+  return { data: cached.value, cache: cached.meta, source: "cache" };
+}
+
+export async function readAnyCachedUsageSnapshot(): Promise<UsageSnapshotResult | null> {
+  const cached = await readCacheEntry<UsageSnapshot>(USAGE_CACHE_KEY);
+  if (!cached) return null;
+  return { data: cached.value, cache: cached.meta, source: "stale-cache" };
+}
+
+export async function writeUsageSnapshotToCache(snapshot: UsageSnapshot): Promise<CacheMeta> {
+  return writeCache(USAGE_CACHE_KEY, snapshot);
+}
+
+export async function refreshUsageSnapshot(
+  options: { timeoutMs?: number } = {}
+): Promise<UsageSnapshotResult> {
+  const response = await requestRateLimitsWithRetry(options);
+  const usage = normalizeRateLimits(response);
+  return { data: usage, cache: await writeCache(USAGE_CACHE_KEY, usage), source: "network" };
 }
 
 async function requestRateLimitsWithRetry(options: { timeoutMs?: number }): Promise<AppServerRateLimitsResponse> {
@@ -168,7 +231,7 @@ async function requestRateLimits(options: { timeoutMs?: number }): Promise<AppSe
       id: 1,
       method: "initialize",
       params: {
-        clientInfo: { name: "codex-meter", version: "0.2.1" },
+        clientInfo: { name: "codex-meter", version: "0.3.0" },
         capabilities: {
           experimentalApi: true,
           optOutNotificationMethods: ["account/updated", "account/rateLimits/updated"]

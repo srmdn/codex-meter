@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 import { access } from "node:fs/promises";
 import { readAuth, defaultAuthPath } from "./auth.js";
+import { type CacheMeta } from "./cache.js";
 import { SafeError, toSafeError } from "./errors.js";
 import { detectTimezone, formatDefault, formatResets, formatUsage, toJsonOutput, validateTimezone } from "./format.js";
 import { repoBranchLabel } from "./git.js";
 import { fetchResetCredits } from "./reset-credits.js";
-import { readUsageSnapshot, type UsageSnapshot } from "./app-server.js";
+import { getUsageSnapshot, readUsageSnapshot, type UsageSnapshot, type UsageSnapshotResult } from "./app-server.js";
 
 type CliOptions = {
   command: "default" | "resets" | "usage" | "doctor";
   json: boolean;
   help: boolean;
+  live: boolean;
   timezone: string;
   cacheTtlSeconds: number;
+  usageCacheTtlSeconds: number;
   authPath: string;
 };
 
@@ -21,8 +24,10 @@ function parseArgs(argv: string[]): CliOptions {
     command: "default",
     json: false,
     help: false,
+    live: false,
     timezone: detectTimezone(),
     cacheTtlSeconds: 300,
+    usageCacheTtlSeconds: 30,
     authPath: process.env.CODEX_METER_AUTH_FILE || defaultAuthPath()
   };
   const commands: CliOptions["command"][] = [];
@@ -30,8 +35,10 @@ function parseArgs(argv: string[]): CliOptions {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--json") options.json = true;
+    else if (arg === "--live") options.live = true;
     else if (arg === "--timezone") options.timezone = requireValue(argv, ++i, "--timezone");
     else if (arg === "--cache-ttl") options.cacheTtlSeconds = Number(requireValue(argv, ++i, "--cache-ttl"));
+    else if (arg === "--cache-ttl-usage") options.usageCacheTtlSeconds = Number(requireValue(argv, ++i, "--cache-ttl-usage"));
     else if (arg === "--auth-file") options.authPath = requireValue(argv, ++i, "--auth-file");
     else if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "resets" || arg === "usage" || arg === "doctor") {
@@ -48,6 +55,9 @@ function parseArgs(argv: string[]): CliOptions {
   if (!Number.isFinite(options.cacheTtlSeconds) || options.cacheTtlSeconds < 0) {
     throw new SafeError("cache: --cache-ttl must be a non-negative number");
   }
+  if (!Number.isFinite(options.usageCacheTtlSeconds) || options.usageCacheTtlSeconds < 0) {
+    throw new SafeError("cache: --cache-ttl-usage must be a non-negative number");
+  }
   validateTimezone(options.timezone);
   return options;
 }
@@ -60,16 +70,18 @@ function requireValue(argv: string[], index: number, flag: string): string {
 
 function helpText(): string {
   return [
-    "codex-meter v0.2.1",
+    "codex-meter v0.3.0",
     "",
     "Usage:",
     "  codex-meter [--json] [--timezone IANA_ZONE]",
     "  codex-meter resets [--json] [--timezone IANA_ZONE]",
-    "  codex-meter usage",
+    "  codex-meter usage [--live]",
     "  codex-meter doctor [--timezone IANA_ZONE]",
     "",
     "Options:",
-    "  --cache-ttl seconds  Cache reset-credit response, default 300",
+    "  --cache-ttl seconds        Cache reset-credit response, default 300",
+    "  --cache-ttl-usage seconds  Cache usage response, default 30",
+    "  --live                     Bypass cache and force fresh reads",
     "  --auth-file path     Override ~/.codex/auth.json for tests/debugging"
   ].join("\n");
 }
@@ -79,7 +91,12 @@ async function run(options: CliOptions): Promise<string> {
     return helpText();
   }
   if (options.command === "usage") {
-    const usage = await safeReadUsage();
+    const usageResult = await safeReadUsage({
+      useCache: !options.live,
+      cacheTtlSeconds: options.usageCacheTtlSeconds,
+      allowStaleOnError: !options.live
+    });
+    const usage = usageResult?.data ?? null;
     if (options.json) {
       return JSON.stringify({ timezone: options.timezone, rate_limits: usage ? toJsonOutputRateLimits(usage, options.timezone) : null }, null, 2);
     }
@@ -90,9 +107,19 @@ async function run(options: CliOptions): Promise<string> {
   }
 
   const auth = await readAuth(options.authPath);
-  const usagePromise = options.command === "default" ? safeReadUsage() : Promise.resolve(null);
-  const result = await fetchResetCredits(auth.accessToken, { cacheTtlSeconds: options.cacheTtlSeconds });
-  const usage = await usagePromise;
+  const usagePromise =
+    options.command === "default"
+      ? safeReadUsage({
+          useCache: !options.live,
+          cacheTtlSeconds: options.usageCacheTtlSeconds,
+          allowStaleOnError: true
+        })
+      : Promise.resolve(null);
+  const result = await fetchResetCredits(auth.accessToken, {
+    cacheTtlSeconds: options.cacheTtlSeconds,
+    useCache: !options.live
+  });
+  const usage = (await usagePromise)?.data ?? null;
 
   if (options.json) {
     return JSON.stringify(toJsonOutput(result.data, options.timezone, result.cache, usage), null, 2);
@@ -113,9 +140,15 @@ function toJsonOutputRateLimits(usage: UsageSnapshot, timezone: string): NonNull
   return rateLimits;
 }
 
-async function safeReadUsage(): Promise<UsageSnapshot | null> {
+async function safeReadUsage(
+  options: {
+    useCache: boolean;
+    cacheTtlSeconds: number;
+    allowStaleOnError: boolean;
+  }
+): Promise<UsageSnapshotResult | null> {
   try {
-    return await readUsageSnapshot();
+    return await getUsageSnapshot(options);
   } catch {
     return null;
   }
@@ -147,6 +180,17 @@ async function doctor(options: CliOptions): Promise<string> {
   }
 
   try {
+    const usage = await getUsageSnapshot({
+      useCache: true,
+      cacheTtlSeconds: options.usageCacheTtlSeconds,
+      allowStaleOnError: true
+    });
+    lines.push(`usage cache: ${describeCache(usage.cache, usage.source)}`);
+  } catch (error) {
+    lines.push(toSafeError(error).message);
+  }
+
+  try {
     await readUsageSnapshot();
     lines.push("app-server: reachable");
   } catch (error) {
@@ -165,6 +209,12 @@ async function doctor(options: CliOptions): Promise<string> {
   }
 
   return lines.join("\n");
+}
+
+function describeCache(cache: CacheMeta, source: UsageSnapshotResult["source"]): string {
+  if (source === "network") return "refreshed";
+  if (source === "stale-cache") return `stale (${cache.ageSeconds}s old)`;
+  return `fresh (${cache.ageSeconds}s old)`;
 }
 
 async function main(): Promise<void> {
