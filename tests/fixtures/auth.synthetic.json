@@ -1,0 +1,9 @@
+{
+  "auth_mode": "chatgpt",
+  "tokens": {
+    "access_token": "synthetic-access-token",
+    "account_id": "acct_synthetic",
+    "id_token": "synthetic-id-token",
+    "refresh_token": "synthetic-refresh-token"
+  }
+}

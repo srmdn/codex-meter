@@ -1,0 +1,26 @@
+{
+  "name": "codex-meter",
+  "version": "0.1.0",
+  "description": "Terminal quota meter for OpenAI Codex reset credits.",
+  "type": "module",
+  "bin": {
+    "codex-meter": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit",
+    "test": "npm run build && node --test"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3"
+  }
+}

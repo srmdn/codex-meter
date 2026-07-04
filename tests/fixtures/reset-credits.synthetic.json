@@ -1,0 +1,23 @@
+{
+  "credits": [
+    {
+      "id": "RateLimitResetCredit_synthetic_1",
+      "reset_type": "codex_rate_limits",
+      "status": "available",
+      "granted_at": "2026-06-12T03:55:55.150734Z",
+      "expires_at": "2026-07-12T03:55:55.150734Z",
+      "redeem_started_at": null,
+      "redeemed_at": null,
+      "title": "Full reset (Weekly + 5 hr)"
+    },
+    {
+      "id": "RateLimitResetCredit_synthetic_2",
+      "reset_type": "codex_rate_limits",
+      "status": "redeemed",
+      "expires_at": "2026-07-10T03:55:55.150734Z",
+      "title": "Full reset (Weekly + 5 hr)"
+    }
+  ],
+  "available_count": 1,
+  "total_earned_count": 1
+}
