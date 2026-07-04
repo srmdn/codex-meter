@@ -52,7 +52,7 @@ function requireValue(argv: string[], index: number, flag: string): string {
 
 function helpText(): string {
   return [
-    "codex-meter v0.2.0",
+    "codex-meter v0.2.1",
     "",
     "Usage:",
     "  codex-meter [--json] [--timezone IANA_ZONE]",

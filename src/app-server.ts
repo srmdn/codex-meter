@@ -168,7 +168,7 @@ async function requestRateLimits(options: { timeoutMs?: number }): Promise<AppSe
       id: 1,
       method: "initialize",
       params: {
-        clientInfo: { name: "codex-meter", version: "0.2.0" },
+        clientInfo: { name: "codex-meter", version: "0.2.1" },
         capabilities: {
           experimentalApi: true,
           optOutNotificationMethods: ["account/updated", "account/rateLimits/updated"]
