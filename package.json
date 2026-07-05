@@ -1,7 +1,7 @@
 {
   "name": "codex-meter",
-  "version": "0.3.0",
-  "description": "Terminal quota meter for OpenAI Codex reset credits.",
+  "version": "0.4.0",
+  "description": "Terminal quota meter and local usage analytics for OpenAI Codex.",
   "type": "module",
   "bin": {
     "codex-meter": "dist/cli.js"

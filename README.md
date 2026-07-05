@@ -1,8 +1,8 @@
 # codex-meter
 
-Terminal quota meter for OpenAI Codex.
+Terminal quota meter and local usage analytics for OpenAI Codex.
 
-v0.3 reads local Codex usage windows through `codex app-server`, reads reset-credit expiry data through the ChatGPT reset-credit endpoint, formats times in local timezone, and supports JSON output.
+v0.4 keeps the default quota meter fast and compact, then adds separate local-history analytics commands for session totals, favorite models, and activity by day.
 
 The default command is cache-first for speed. Use `--live` to force fresh reads.
 
@@ -13,6 +13,9 @@ npm run build
 node dist/cli.js
 node dist/cli.js --json
 node dist/cli.js resets
+node dist/cli.js stats
+node dist/cli.js models
+node dist/cli.js activity
 node dist/cli.js doctor
 node dist/cli.js --timezone UTC
 node dist/cli.js --live
@@ -51,6 +54,10 @@ codex-meter
 codex-meter --json
 codex-meter resets
 codex-meter usage
+codex-meter stats
+codex-meter models
+codex-meter activity
+codex-meter cost
 codex-meter doctor
 codex-meter --timezone Asia/Jakarta
 codex-meter --live
@@ -76,6 +83,22 @@ Reset credits: 4 available
 `usage` uses `codex app-server --stdio` for 5-hour and weekly usage windows. If app-server is unavailable, the default command still shows reset-credit data when possible.
 
 By default, `codex-meter` prefers cached usage data for a fast terminal response. `--live` bypasses cache and forces fresh app-server and reset-credit reads.
+
+`stats`, `models`, and `activity` read local Codex session history from `~/.codex/sessions/`. They do not change current quota state or call external services.
+
+Example `stats` output:
+
+```text
+Timezone: Asia/Jakarta (WIB, UTC+07:00)
+Sessions scanned: 42
+Sessions with usage: 39
+Active days: 11
+Favorite model: gpt-5.5 (84 turns, 28 sessions)
+Last activity: Jul 5 15:12 WIB
+Total tokens: 1,234,567
+```
+
+`cost` is reserved for a later release. `codex-meter` does not ship estimated cost output until it has a stable pricing source and clear labeling.
 
 ## Development
 

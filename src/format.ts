@@ -1,6 +1,7 @@
 import type { CacheMeta } from "./cache.js";
 import { availableCredits, codexAvailableCredits, type ResetCredit, type ResetCreditsResponse } from "./reset-credits.js";
 import type { NormalizedRateLimitWindow, UsageSnapshot } from "./app-server.js";
+import type { SessionHistorySummary } from "./session-history.js";
 
 export type JsonOutput = {
   timezone: string;
@@ -185,6 +186,58 @@ export function formatUsageInline(usage: UsageSnapshot, timezone: string): strin
   return usage.windows.map((window) => formatWindow(window, timezone)).join(" │ ");
 }
 
+export function formatStats(summary: SessionHistorySummary, timezone: string): string {
+  const lines = [`Timezone: ${timezoneLabel(timezone)}`];
+  lines.push(`Sessions scanned: ${formatInt(summary.sessionsScanned)}`);
+  lines.push(`Sessions with usage: ${formatInt(summary.sessionsWithUsage)}`);
+  lines.push(`Active days: ${formatInt(summary.activeDays)}`);
+  if (summary.models[0]) {
+    lines.push(`Favorite model: ${summary.models[0].model} (${countLabel(summary.models[0].turns, "turn")}, ${countLabel(summary.models[0].sessions, "session")})`);
+  }
+  if (summary.firstActivityAt) {
+    lines.push(`First activity: ${formatShort(summary.firstActivityAt, timezone)} ${timezoneAbbreviation(timezone, new Date(summary.firstActivityAt))}`);
+  }
+  if (summary.lastActivityAt) {
+    lines.push(`Last activity: ${formatShort(summary.lastActivityAt, timezone)} ${timezoneAbbreviation(timezone, new Date(summary.lastActivityAt))}`);
+  }
+  lines.push(`Total tokens: ${formatInt(summary.totals.totalTokens)}`);
+  lines.push(`Input tokens: ${formatInt(summary.totals.inputTokens)}`);
+  lines.push(`Cached input tokens: ${formatInt(summary.totals.cachedInputTokens)}`);
+  lines.push(`Output tokens: ${formatInt(summary.totals.outputTokens)}`);
+  lines.push(`Reasoning tokens: ${formatInt(summary.totals.reasoningOutputTokens)}`);
+  return lines.join("\n");
+}
+
+export function formatModels(summary: SessionHistorySummary, timezone: string): string {
+  const lines = [`Timezone: ${timezoneLabel(timezone)}`];
+  if (summary.models.length === 0) {
+    lines.push("Models: no model history found.");
+    return lines.join("\n");
+  }
+  lines.push("Models:");
+  for (const model of summary.models.slice(0, 10)) {
+    lines.push(`${model.model}: ${countLabel(model.turns, "turn")}, ${countLabel(model.sessions, "session")}`);
+  }
+  return lines.join("\n");
+}
+
+export function formatActivity(summary: SessionHistorySummary, timezone: string): string {
+  const lines = [`Timezone: ${timezoneLabel(timezone)}`];
+  if (summary.days.length === 0) {
+    lines.push("Activity: no token history found.");
+    return lines.join("\n");
+  }
+  lines.push("Recent activity:");
+  for (const day of summary.days.slice(0, 7)) {
+    lines.push(`${day.date}: ${countLabel(day.sessions, "session")}, ${formatInt(day.totalTokens)} total tokens`);
+  }
+  return lines.join("\n");
+}
+
+export function formatCostUnavailable(): string {
+  return "cost: unavailable; codex-meter does not ship a pricing table yet";
+}
+
 export function formatWindow(window: NormalizedRateLimitWindow, timezone: string): string {
   const reset = window.resetsAt ? `${formatShortTime(window.resetsAt, timezone)} (${formatDurationUntilTime(window.resetsAt)})` : "unknown";
   return `${window.label}: ${bar(window.remainingPercent)} ${window.remainingPercent}% left, resets ${reset}`;
@@ -217,6 +270,14 @@ export function formatShortTime(value: number, timezone: string): string {
 function bar(percent: number): string {
   const filled = Math.max(0, Math.min(5, Math.round(percent / 20)));
   return `${"▰".repeat(filled)}${"▱".repeat(5 - filled)}`;
+}
+
+function formatInt(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function countLabel(count: number, singular: string): string {
+  return `${formatInt(count)} ${count === 1 ? singular : `${singular}s`}`;
 }
 
 export function formatResets(data: ResetCreditsResponse, timezone: string): string {
@@ -271,6 +332,41 @@ function toJsonRateLimits(usage: UsageSnapshot, timezone: string): NonNullable<J
     windows,
     five_hour: windows.five_hour,
     weekly: windows.weekly
+  };
+}
+
+export function toJsonStats(summary: SessionHistorySummary, timezone: string): Record<string, unknown> {
+  return {
+    timezone,
+    sessions_scanned: summary.sessionsScanned,
+    sessions_with_usage: summary.sessionsWithUsage,
+    active_days: summary.activeDays,
+    first_activity_at: summary.firstActivityAt,
+    first_activity_at_local: formatLocal(summary.firstActivityAt ?? undefined, timezone),
+    last_activity_at: summary.lastActivityAt,
+    last_activity_at_local: formatLocal(summary.lastActivityAt ?? undefined, timezone),
+    totals: {
+      input_tokens: summary.totals.inputTokens,
+      cached_input_tokens: summary.totals.cachedInputTokens,
+      output_tokens: summary.totals.outputTokens,
+      reasoning_output_tokens: summary.totals.reasoningOutputTokens,
+      total_tokens: summary.totals.totalTokens
+    },
+    favorite_model: summary.models[0] ?? null
+  };
+}
+
+export function toJsonModels(summary: SessionHistorySummary, timezone: string): Record<string, unknown> {
+  return {
+    timezone,
+    models: summary.models
+  };
+}
+
+export function toJsonActivity(summary: SessionHistorySummary, timezone: string): Record<string, unknown> {
+  return {
+    timezone,
+    days: summary.days
   };
 }
 

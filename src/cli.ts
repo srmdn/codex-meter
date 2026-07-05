@@ -3,13 +3,28 @@ import { access } from "node:fs/promises";
 import { readAuth, defaultAuthPath } from "./auth.js";
 import { type CacheMeta } from "./cache.js";
 import { SafeError, toSafeError } from "./errors.js";
-import { detectTimezone, formatDefault, formatResets, formatUsage, toJsonOutput, validateTimezone } from "./format.js";
+import {
+  detectTimezone,
+  formatActivity,
+  formatCostUnavailable,
+  formatDefault,
+  formatModels,
+  formatResets,
+  formatStats,
+  formatUsage,
+  toJsonActivity,
+  toJsonModels,
+  toJsonOutput,
+  toJsonStats,
+  validateTimezone
+} from "./format.js";
 import { repoBranchLabel } from "./git.js";
 import { fetchResetCredits } from "./reset-credits.js";
 import { getUsageSnapshot, readUsageSnapshot, type UsageSnapshot, type UsageSnapshotResult } from "./app-server.js";
+import { readSessionHistorySummary } from "./session-history.js";
 
 type CliOptions = {
-  command: "default" | "resets" | "usage" | "doctor";
+  command: "default" | "resets" | "usage" | "doctor" | "stats" | "models" | "activity" | "cost";
   json: boolean;
   help: boolean;
   live: boolean;
@@ -41,7 +56,7 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--cache-ttl-usage") options.usageCacheTtlSeconds = Number(requireValue(argv, ++i, "--cache-ttl-usage"));
     else if (arg === "--auth-file") options.authPath = requireValue(argv, ++i, "--auth-file");
     else if (arg === "--help" || arg === "-h") options.help = true;
-    else if (arg === "resets" || arg === "usage" || arg === "doctor") {
+    else if (arg === "resets" || arg === "usage" || arg === "doctor" || arg === "stats" || arg === "models" || arg === "activity" || arg === "cost") {
       commands.push(arg);
       options.command = arg;
     }
@@ -70,13 +85,17 @@ function requireValue(argv: string[], index: number, flag: string): string {
 
 function helpText(): string {
   return [
-    "codex-meter v0.3.0",
+    "codex-meter v0.4.0",
     "",
     "Usage:",
     "  codex-meter [--json] [--timezone IANA_ZONE]",
     "  codex-meter resets [--json] [--timezone IANA_ZONE]",
-    "  codex-meter usage [--live]",
+    "  codex-meter usage [--json] [--live] [--timezone IANA_ZONE]",
     "  codex-meter doctor [--timezone IANA_ZONE]",
+    "  codex-meter stats [--json] [--timezone IANA_ZONE]",
+    "  codex-meter models [--json] [--timezone IANA_ZONE]",
+    "  codex-meter activity [--json] [--timezone IANA_ZONE]",
+    "  codex-meter cost [--json]",
     "",
     "Options:",
     "  --cache-ttl seconds        Cache reset-credit response, default 300",
@@ -104,6 +123,23 @@ async function run(options: CliOptions): Promise<string> {
   }
   if (options.command === "doctor") {
     return doctor(options);
+  }
+  if (options.command === "stats" || options.command === "models" || options.command === "activity") {
+    const summary = await readSessionHistorySummary(options.timezone);
+    if (options.json) {
+      if (options.command === "stats") return JSON.stringify(toJsonStats(summary, options.timezone), null, 2);
+      if (options.command === "models") return JSON.stringify(toJsonModels(summary, options.timezone), null, 2);
+      return JSON.stringify(toJsonActivity(summary, options.timezone), null, 2);
+    }
+    if (options.command === "stats") return formatStats(summary, options.timezone);
+    if (options.command === "models") return formatModels(summary, options.timezone);
+    return formatActivity(summary, options.timezone);
+  }
+  if (options.command === "cost") {
+    if (options.json) {
+      return JSON.stringify({ available: false, reason: "pricing table not shipped" }, null, 2);
+    }
+    return formatCostUnavailable();
   }
 
   const auth = await readAuth(options.authPath);
