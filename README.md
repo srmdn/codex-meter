@@ -2,7 +2,7 @@
 
 Terminal quota meter and local usage analytics for OpenAI Codex.
 
-v0.4 keeps the default quota meter fast and compact, then adds separate local-history analytics commands for session totals, favorite models, and activity by day.
+v0.4 keeps the default quota meter fast and compact, then adds separate local-history analytics commands for session totals, favorite models, activity by day, and manual estimated cost.
 
 The default command is cache-first for speed. Use `--live` to force fresh reads.
 
@@ -16,6 +16,7 @@ node dist/cli.js resets
 node dist/cli.js stats
 node dist/cli.js models
 node dist/cli.js activity
+node dist/cli.js cost --pricing tests/fixtures/pricing.synthetic.json
 node dist/cli.js doctor
 node dist/cli.js --timezone UTC
 node dist/cli.js --live
@@ -86,6 +87,29 @@ By default, `codex-meter` prefers cached usage data for a fast terminal response
 
 `stats`, `models`, and `activity` read local Codex session history from `~/.codex/sessions/`. They do not change current quota state or call external services.
 
+`cost` reads the same local session history, plus a user-supplied manual pricing file. It is always labeled estimated and is not official billing.
+
+## Estimated Cost Setup
+
+`codex-meter cost` requires a pricing file.
+
+Default path:
+
+```text
+~/.config/codex-meter/pricing.json
+```
+
+Commands:
+
+```bash
+codex-meter cost --pricing
+codex-meter cost --json --pricing
+codex-meter cost --pricing ./pricing.json
+codex-meter cost --pricing-file ./pricing.json
+```
+
+Create a pricing file before using `cost`.
+
 Example `stats` output:
 
 ```text
@@ -98,7 +122,62 @@ Last activity: Jul 5 15:12 WIB
 Total tokens: 1,234,567
 ```
 
-`cost` is reserved for a later release. `codex-meter` does not ship estimated cost output until it has a stable pricing source and clear labeling.
+Example manual pricing file:
+
+```json
+{
+  "version": "2026-07-05",
+  "currency": "USD",
+  "models": {
+    "gpt-5.5": {
+      "input_per_1m": 1.25,
+      "cached_input_per_1m": 0.125,
+      "output_per_1m": 10,
+      "reasoning_output_per_1m": 10
+    }
+  }
+}
+```
+
+How estimated cost is calculated:
+
+- Reads local Codex session history from `~/.codex/sessions/`
+- Groups token usage by model
+- Applies your manual per-model prices:
+  - `input_per_1m`
+  - `cached_input_per_1m`
+  - `output_per_1m`
+  - `reasoning_output_per_1m`
+- Sums per-model estimated cost into total estimated cost
+
+Formula:
+
+```text
+estimated cost =
+  input_tokens * input_per_1m / 1,000,000 +
+  cached_input_tokens * cached_input_per_1m / 1,000,000 +
+  output_tokens * output_per_1m / 1,000,000 +
+  reasoning_output_tokens * reasoning_output_per_1m / 1,000,000
+```
+
+Example `cost` output:
+
+```text
+Estimated cost (manual pricing config)
+Timezone: Asia/Jakarta (WIB, UTC+07:00)
+Pricing version: 2026-07-05
+Total estimated cost: $12.34
+Total tokens: 1,234,567
+By model:
+gpt-5.5: $12.34 (84 turns, 1,234,567 tokens)
+Estimated only. Calculated from local session tokens + manual pricing config. Not official billing.
+```
+
+Disclaimer:
+
+- Estimated cost uses local Codex session tokens plus your manual pricing file.
+- It is not official OpenAI billing.
+- If a model appears in local history without a matching manual price, `codex-meter cost` fails instead of guessing.
 
 ## Development
 

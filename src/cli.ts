@@ -6,13 +6,14 @@ import { SafeError, toSafeError } from "./errors.js";
 import {
   detectTimezone,
   formatActivity,
-  formatCostUnavailable,
   formatDefault,
+  formatEstimatedCost,
   formatModels,
   formatResets,
   formatStats,
   formatUsage,
   toJsonActivity,
+  toJsonCost,
   toJsonModels,
   toJsonOutput,
   toJsonStats,
@@ -22,6 +23,7 @@ import { repoBranchLabel } from "./git.js";
 import { fetchResetCredits } from "./reset-credits.js";
 import { getUsageSnapshot, readUsageSnapshot, type UsageSnapshot, type UsageSnapshotResult } from "./app-server.js";
 import { readSessionHistorySummary } from "./session-history.js";
+import { defaultPricingPath, estimateCost, readManualPricing } from "./pricing.js";
 
 type CliOptions = {
   command: "default" | "resets" | "usage" | "doctor" | "stats" | "models" | "activity" | "cost";
@@ -32,6 +34,7 @@ type CliOptions = {
   cacheTtlSeconds: number;
   usageCacheTtlSeconds: number;
   authPath: string;
+  pricingPath: string | null;
 };
 
 function parseArgs(argv: string[]): CliOptions {
@@ -43,7 +46,8 @@ function parseArgs(argv: string[]): CliOptions {
     timezone: detectTimezone(),
     cacheTtlSeconds: 300,
     usageCacheTtlSeconds: 30,
-    authPath: process.env.CODEX_METER_AUTH_FILE || defaultAuthPath()
+    authPath: process.env.CODEX_METER_AUTH_FILE || defaultAuthPath(),
+    pricingPath: process.env.CODEX_METER_PRICING_FILE || null
   };
   const commands: CliOptions["command"][] = [];
 
@@ -55,6 +59,12 @@ function parseArgs(argv: string[]): CliOptions {
     else if (arg === "--cache-ttl") options.cacheTtlSeconds = Number(requireValue(argv, ++i, "--cache-ttl"));
     else if (arg === "--cache-ttl-usage") options.usageCacheTtlSeconds = Number(requireValue(argv, ++i, "--cache-ttl-usage"));
     else if (arg === "--auth-file") options.authPath = requireValue(argv, ++i, "--auth-file");
+    else if (arg === "--pricing") {
+      const value = optionalValue(argv, i + 1);
+      if (value) i += 1;
+      options.pricingPath = value ?? defaultPricingPath();
+    }
+    else if (arg === "--pricing-file") options.pricingPath = requireValue(argv, ++i, "--pricing-file");
     else if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "resets" || arg === "usage" || arg === "doctor" || arg === "stats" || arg === "models" || arg === "activity" || arg === "cost") {
       commands.push(arg);
@@ -83,9 +93,15 @@ function requireValue(argv: string[], index: number, flag: string): string {
   return value;
 }
 
+function optionalValue(argv: string[], index: number): string | null {
+  const value = argv[index];
+  if (!value || value.startsWith("-")) return null;
+  return value;
+}
+
 function helpText(): string {
   return [
-    "codex-meter v0.4.0",
+    "codex-meter v0.4.1",
     "",
     "Usage:",
     "  codex-meter [--json] [--timezone IANA_ZONE]",
@@ -95,13 +111,15 @@ function helpText(): string {
     "  codex-meter stats [--json] [--timezone IANA_ZONE]",
     "  codex-meter models [--json] [--timezone IANA_ZONE]",
     "  codex-meter activity [--json] [--timezone IANA_ZONE]",
-    "  codex-meter cost [--json]",
+    "  codex-meter cost [--json] --pricing [path] [--timezone IANA_ZONE]",
     "",
     "Options:",
     "  --cache-ttl seconds        Cache reset-credit response, default 300",
     "  --cache-ttl-usage seconds  Cache usage response, default 30",
     "  --live                     Bypass cache and force fresh reads",
-    "  --auth-file path     Override ~/.codex/auth.json for tests/debugging"
+    "  --auth-file path           Override ~/.codex/auth.json for tests/debugging",
+    "  --pricing [path]           Manual pricing JSON, default ~/.config/codex-meter/pricing.json",
+    "  --pricing-file path        Explicit manual pricing JSON path"
   ].join("\n");
 }
 
@@ -136,10 +154,16 @@ async function run(options: CliOptions): Promise<string> {
     return formatActivity(summary, options.timezone);
   }
   if (options.command === "cost") {
-    if (options.json) {
-      return JSON.stringify({ available: false, reason: "pricing table not shipped" }, null, 2);
+    if (!options.pricingPath) {
+      throw new SafeError("pricing: provide --pricing or --pricing-file for estimated cost");
     }
-    return formatCostUnavailable();
+    const history = await readSessionHistorySummary(options.timezone);
+    const pricing = await readManualPricing(options.pricingPath);
+    const cost = estimateCost(history, pricing);
+    if (options.json) {
+      return JSON.stringify(toJsonCost(cost, options.timezone), null, 2);
+    }
+    return formatEstimatedCost(cost, options.timezone);
   }
 
   const auth = await readAuth(options.authPath);

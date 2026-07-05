@@ -17,6 +17,11 @@ export type ModelSummary = {
   model: string;
   turns: number;
   sessions: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
 };
 
 export type ActivityDaySummary = {
@@ -45,11 +50,13 @@ type ParsedSession = {
   activityAt: string | null;
   totals: TokenUsageTotals | null;
   models: string[];
+  modelTotals: Map<string, TokenUsageTotals>;
 };
 
 type MutableModelSummary = {
   turns: number;
   sessions: Set<string>;
+  totals: TokenUsageTotals;
 };
 
 export function defaultSessionsPath(): string {
@@ -76,11 +83,16 @@ export async function readSessionHistorySummary(
     const session = await parseSessionFile(file);
     if (session.models.length > 0) {
       for (const model of session.models) {
-        const entry = modelMap.get(model) ?? { turns: 0, sessions: new Set<string>() };
+        const entry = modelMap.get(model) ?? { turns: 0, sessions: new Set<string>(), totals: zeroTotals() };
         entry.turns += 1;
         entry.sessions.add(session.sessionId);
         modelMap.set(model, entry);
       }
+    }
+    for (const [model, totals] of session.modelTotals.entries()) {
+      const entry = modelMap.get(model) ?? { turns: 0, sessions: new Set<string>(), totals: zeroTotals() };
+      addTotals(entry.totals, totals);
+      modelMap.set(model, entry);
     }
     if (!session.totals || !session.activityAt) continue;
 
@@ -104,7 +116,16 @@ export async function readSessionHistorySummary(
     lastActivityAt,
     totals,
     models: [...modelMap.entries()]
-      .map(([model, value]) => ({ model, turns: value.turns, sessions: value.sessions.size }))
+      .map(([model, value]) => ({
+        model,
+        turns: value.turns,
+        sessions: value.sessions.size,
+        inputTokens: value.totals.inputTokens,
+        cachedInputTokens: value.totals.cachedInputTokens,
+        outputTokens: value.totals.outputTokens,
+        reasoningOutputTokens: value.totals.reasoningOutputTokens,
+        totalTokens: value.totals.totalTokens
+      }))
       .sort((a, b) => b.turns - a.turns || b.sessions - a.sessions || a.model.localeCompare(b.model)),
     days: [...dayMap.values()].sort((a, b) => b.date.localeCompare(a.date))
   };
@@ -132,6 +153,8 @@ async function parseSessionFile(path: string): Promise<ParsedSession> {
   let sessionStartedAt: string | null = null;
   let latestUsage: TokenUsageTotals | null = null;
   let latestUsageAt: string | null = null;
+  let currentModel: string | null = null;
+  const modelTotals = new Map<string, TokenUsageTotals>();
 
   const lines = createInterface({
     input: createReadStream(path, { encoding: "utf8" }),
@@ -156,7 +179,10 @@ async function parseSessionFile(path: string): Promise<ParsedSession> {
 
     if (type === "turn_context") {
       const model = readString(record, "payload", "model");
-      if (model) models.push(model);
+      if (model) {
+        models.push(model);
+        currentModel = model;
+      }
       continue;
     }
 
@@ -166,7 +192,13 @@ async function parseSessionFile(path: string): Promise<ParsedSession> {
 
     const totals = readTotals(record, "payload", "info", "total_token_usage")
       ?? readTotals(record, "payload", "info", "last_token_usage");
+    const lastUsage = readTotals(record, "payload", "info", "last_token_usage") ?? totals;
     if (!totals) continue;
+    if (currentModel && lastUsage) {
+      const entry = modelTotals.get(currentModel) ?? zeroTotals();
+      addTotals(entry, lastUsage);
+      modelTotals.set(currentModel, entry);
+    }
 
     const timestamp = readString(record, "timestamp") ?? sessionStartedAt;
     if (!latestUsage || totals.totalTokens >= latestUsage.totalTokens) {
@@ -179,7 +211,8 @@ async function parseSessionFile(path: string): Promise<ParsedSession> {
     sessionId,
     activityAt: latestUsageAt ?? sessionStartedAt,
     totals: latestUsage,
-    models
+    models,
+    modelTotals
   };
 }
 

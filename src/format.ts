@@ -2,6 +2,7 @@ import type { CacheMeta } from "./cache.js";
 import { availableCredits, codexAvailableCredits, type ResetCredit, type ResetCreditsResponse } from "./reset-credits.js";
 import type { NormalizedRateLimitWindow, UsageSnapshot } from "./app-server.js";
 import type { SessionHistorySummary } from "./session-history.js";
+import type { EstimatedCostSummary } from "./pricing.js";
 
 export type JsonOutput = {
   timezone: string;
@@ -238,6 +239,22 @@ export function formatCostUnavailable(): string {
   return "cost: unavailable; codex-meter does not ship a pricing table yet";
 }
 
+export function formatEstimatedCost(summary: EstimatedCostSummary, timezone: string): string {
+  const lines = [
+    "Estimated cost (manual pricing config)",
+    `Timezone: ${timezoneLabel(timezone)}`,
+    `Pricing version: ${summary.pricingVersion}`,
+    `Total estimated cost: ${formatMoney(summary.totalEstimatedCost, summary.currency)}`,
+    `Total tokens: ${formatInt(summary.tokenTotals.totalTokens)}`
+  ];
+  lines.push("By model:");
+  for (const item of summary.breakdown) {
+    lines.push(`${item.model}: ${formatMoney(item.estimatedCost, summary.currency)} (${countLabel(item.turns, "turn")}, ${formatInt(item.tokenTotals.totalTokens)} tokens)`);
+  }
+  lines.push("Estimated only. Calculated from local session tokens + manual pricing config. Not official billing.");
+  return lines.join("\n");
+}
+
 export function formatWindow(window: NormalizedRateLimitWindow, timezone: string): string {
   const reset = window.resetsAt ? `${formatShortTime(window.resetsAt, timezone)} (${formatDurationUntilTime(window.resetsAt)})` : "unknown";
   return `${window.label}: ${bar(window.remainingPercent)} ${window.remainingPercent}% left, resets ${reset}`;
@@ -278,6 +295,15 @@ function formatInt(value: number): string {
 
 function countLabel(count: number, singular: string): string {
   return `${formatInt(count)} ${count === 1 ? singular : `${singular}s`}`;
+}
+
+function formatMoney(value: number, currency: string): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4
+  }).format(value);
 }
 
 export function formatResets(data: ResetCreditsResponse, timezone: string): string {
@@ -367,6 +393,27 @@ export function toJsonActivity(summary: SessionHistorySummary, timezone: string)
   return {
     timezone,
     days: summary.days
+  };
+}
+
+export function toJsonCost(summary: EstimatedCostSummary, timezone: string): Record<string, unknown> {
+  return {
+    timezone,
+    estimated: true,
+    pricing_source: summary.pricingSource,
+    billing_authority: summary.billingAuthority,
+    pricing_version: summary.pricingVersion,
+    currency: summary.currency,
+    total_estimated_cost: summary.totalEstimatedCost,
+    token_totals: {
+      input_tokens: summary.tokenTotals.inputTokens,
+      cached_input_tokens: summary.tokenTotals.cachedInputTokens,
+      output_tokens: summary.tokenTotals.outputTokens,
+      reasoning_output_tokens: summary.tokenTotals.reasoningOutputTokens,
+      total_tokens: summary.tokenTotals.totalTokens
+    },
+    breakdown: summary.breakdown,
+    disclaimer: "Estimated only. Calculated from local session tokens + manual pricing config. Not official billing."
   };
 }
 

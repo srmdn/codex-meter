@@ -1,0 +1,18 @@
+{
+  "version": "2026-07-05",
+  "currency": "USD",
+  "models": {
+    "gpt-5.5": {
+      "input_per_1m": 1.25,
+      "cached_input_per_1m": 0.125,
+      "output_per_1m": 10,
+      "reasoning_output_per_1m": 10
+    },
+    "gpt-5": {
+      "input_per_1m": 2.5,
+      "cached_input_per_1m": 0.25,
+      "output_per_1m": 12.5,
+      "reasoning_output_per_1m": 12.5
+    }
+  }
+}
