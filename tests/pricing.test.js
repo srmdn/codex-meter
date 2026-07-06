@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { formatEstimatedCost, toJsonCost } from "../dist/format.js";
-import { defaultPricingPath, estimateCost, readManualPricing, writeStarterPricing } from "../dist/pricing.js";
+import { defaultPricingPath, estimateCost, readPricingConfig, writeStarterPricing } from "../dist/pricing.js";
 import { readSessionHistorySummary } from "../dist/session-history.js";
 
 const fixtureDir = "tests/fixtures/sessions.synthetic";
@@ -12,9 +12,10 @@ const pricingFile = "tests/fixtures/pricing.synthetic.json";
 
 test("estimateCost uses manual pricing config and model token totals", async () => {
   const summary = await readSessionHistorySummary("UTC", fixtureDir);
-  const pricing = await readManualPricing(pricingFile);
+  const pricing = await readPricingConfig(pricingFile);
   const cost = estimateCost(summary, pricing);
   assert.equal(cost.estimated, true);
+  assert.equal(cost.pricingSource, "manual");
   assert.equal(cost.pricingVersion, "2026-07-05");
   assert.equal(cost.currency, "USD");
   assert.equal(cost.breakdown[0].model, "gpt-5.5");
@@ -26,7 +27,7 @@ test("estimateCost uses manual pricing config and model token totals", async () 
 
 test("cost formatters label manual estimate clearly", async () => {
   const summary = await readSessionHistorySummary("UTC", fixtureDir);
-  const pricing = await readManualPricing(pricingFile);
+  const pricing = await readPricingConfig(pricingFile);
   const cost = estimateCost(summary, pricing);
   assert.match(formatEstimatedCost(cost, "UTC"), /Estimated cost \(manual pricing config\)/);
   assert.match(formatEstimatedCost(cost, "UTC"), /Not official billing/);
@@ -34,24 +35,32 @@ test("cost formatters label manual estimate clearly", async () => {
   assert.equal(toJsonCost(cost, "UTC").pricing_source, "manual");
 });
 
-test("readManualPricing rejects missing model prices during estimation", async () => {
+test("estimateCost falls back to built-in pricing when manual values are missing", async () => {
   const summary = await readSessionHistorySummary("UTC", fixtureDir);
   const pricing = JSON.parse(await readFile(pricingFile, "utf8"));
   delete pricing.models["gpt-5"];
-  assert.throws(() => estimateCost(summary, pricing), /no manual price configured for model: gpt-5/);
+  pricing.models["gpt-5.5"].input_per_1m = null;
+  const cost = estimateCost(summary, pricing);
+  assert.equal(cost.pricingSource, "manual+built-in");
+  assert.match(cost.warnings.join("\n"), /built-in estimated pricing used/);
+  assert.equal(cost.breakdown.find((item) => item.model === "gpt-5")?.pricingSource, "built-in");
 });
 
 test("defaultPricingPath targets user config location", () => {
   assert.match(defaultPricingPath(), /\.config[\/\\]codex-meter[\/\\]pricing\.json$/);
 });
 
-test("readManualPricing reports missing file path clearly", async () => {
-  await assert.rejects(() => readManualPricing("tests/fixtures/does-not-exist.json"), /file not found/);
+test("readPricingConfig reports missing file path clearly", async () => {
+  await assert.rejects(() => readPricingConfig("tests/fixtures/does-not-exist.json"), /file not found/);
 });
 
-test("starter pricing file fails with explicit placeholder warning", async () => {
+test("starter pricing file can be read and falls back to built-in pricing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "codex-meter-pricing-"));
   const path = join(dir, "pricing.json");
-  await writeStarterPricing(path, ["gpt-5.5"]);
-  await assert.rejects(() => readManualPricing(path), /replace placeholder prices for gpt-5\.5/);
+  const summary = await readSessionHistorySummary("UTC", fixtureDir);
+  await writeStarterPricing(path, ["gpt-5", "gpt-5.5"]);
+  const pricing = await readPricingConfig(path);
+  const cost = estimateCost(summary, pricing);
+  assert.equal(cost.pricingSource, "built-in");
+  assert.match(cost.warnings.join("\n"), /placeholder\/null values/);
 });

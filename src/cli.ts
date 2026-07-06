@@ -23,7 +23,7 @@ import { repoBranchLabel } from "./git.js";
 import { fetchResetCredits } from "./reset-credits.js";
 import { getUsageSnapshot, readUsageSnapshot, type UsageSnapshot, type UsageSnapshotResult } from "./app-server.js";
 import { readSessionHistorySummary } from "./session-history.js";
-import { defaultPricingPath, estimateCost, readManualPricing, writeStarterPricing } from "./pricing.js";
+import { defaultPricingPath, estimateCost, readPricingConfig, writeStarterPricing } from "./pricing.js";
 
 type CliOptions = {
   command: "default" | "status" | "resets" | "usage" | "doctor" | "stats" | "models" | "activity" | "cost" | "version" | "help";
@@ -38,7 +38,7 @@ type CliOptions = {
   pricingFlagUsed: boolean;
 };
 
-const VERSION = "0.4.2";
+const VERSION = "0.4.3";
 const DOCS_URL = "https://github.com/srmdn/codex-meter";
 const BANNER = [
   "  ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗",
@@ -136,7 +136,7 @@ function helpText(): string {
     "  stats          local token totals and summary",
     "  models         most-used local models",
     "  activity       daily local token activity",
-    "  cost           estimated cost from local tokens + manual pricing",
+    "  cost           estimated cost from local tokens + pricing fallback",
     "                 --pricing [path]   use default or custom pricing file",
     "  doctor         auth, app-server, cache, pricing checks",
     "  version        show version",
@@ -147,7 +147,7 @@ function helpText(): string {
     "  codex-meter cost --pricing",
     "",
     "notes:",
-    `  cost uses local session history + manual pricing file`,
+    `  cost uses local session history + built-in estimates + local overrides`,
     "  estimated only, not official billing",
     `  default pricing path: ${defaultPricingPath()}`,
     "",
@@ -193,25 +193,21 @@ async function run(options: CliOptions): Promise<string> {
       throw new SafeError("pricing: provide --pricing or --pricing-file for estimated cost");
     }
     const history = await readSessionHistorySummary(options.timezone);
+    let preface = "";
     if (options.pricingPath === defaultPricingPath()) {
       try {
-        await readManualPricing(options.pricingPath);
+        await access(options.pricingPath);
       } catch (error) {
-        const message = toSafeError(error).message;
-        if (message.includes("file not found")) {
-          await writeStarterPricing(options.pricingPath, history.models.map((model) => model.model));
-          throw new SafeError(
-            `pricing: starter file created at ${options.pricingPath}\nreplace placeholder null values, then run:\n  codex-meter cost --pricing`
-          );
-        }
+        await writeStarterPricing(options.pricingPath, history.models.map((model) => model.model));
+        preface = `pricing: starter file created at ${options.pricingPath}\nusing built-in estimated pricing until you replace placeholder null values\n\n`;
       }
     }
-    const pricing = await readManualPricing(options.pricingPath);
+    const pricing = await readPricingConfig(options.pricingPath);
     const cost = estimateCost(history, pricing);
     if (options.json) {
       return JSON.stringify(toJsonCost(cost, options.timezone), null, 2);
     }
-    return formatEstimatedCost(cost, options.timezone);
+    return `${preface}${formatEstimatedCost(cost, options.timezone)}`.trimEnd();
   }
 
   const auth = await readAuth(options.authPath);

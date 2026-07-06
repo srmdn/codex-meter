@@ -34,8 +34,10 @@ test("cost first run auto-creates starter pricing file at default path", async (
     HOME: home,
     CODEX_METER_SESSIONS_DIR: "tests/fixtures/sessions.synthetic"
   });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /starter file created at/);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /starter file created at/);
+  assert.match(result.stdout, /using built-in estimated pricing/);
+  assert.match(result.stdout, /Estimated cost \(built-in pricing\)/);
   const createdPath = join(home, ".config", "codex-meter", "pricing.json");
   const created = JSON.parse(await readFile(createdPath, "utf8"));
   assert.equal(created.placeholder, true);
@@ -46,5 +48,5 @@ test("cost first run auto-creates starter pricing file at default path", async (
 test("version command prints current version", () => {
   const result = runCli(["version"]);
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /codex-meter v0\.4\.2/);
+  assert.match(result.stdout, /codex-meter v0\.4\.3/);
 });

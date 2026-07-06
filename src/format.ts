@@ -2,7 +2,7 @@ import type { CacheMeta } from "./cache.js";
 import { availableCredits, codexAvailableCredits, type ResetCredit, type ResetCreditsResponse } from "./reset-credits.js";
 import type { NormalizedRateLimitWindow, UsageSnapshot } from "./app-server.js";
 import type { SessionHistorySummary } from "./session-history.js";
-import type { EstimatedCostSummary } from "./pricing.js";
+import type { CostBreakdown, EstimatedCostSummary } from "./pricing.js";
 
 export type JsonOutput = {
   timezone: string;
@@ -240,18 +240,28 @@ export function formatCostUnavailable(): string {
 }
 
 export function formatEstimatedCost(summary: EstimatedCostSummary, timezone: string): string {
+  const title =
+    summary.pricingSource === "manual"
+      ? "Estimated cost (manual pricing config)"
+      : summary.pricingSource === "built-in"
+        ? "Estimated cost (built-in pricing)"
+        : "Estimated cost (manual overrides + built-in pricing)";
   const lines = [
-    "Estimated cost (manual pricing config)",
+    title,
     `Timezone: ${timezoneLabel(timezone)}`,
+    `Pricing source: ${formatPricingSource(summary.pricingSource)}`,
     `Pricing version: ${summary.pricingVersion}`,
     `Total estimated cost: ${formatMoney(summary.totalEstimatedCost, summary.currency)}`,
     `Total tokens: ${formatInt(summary.tokenTotals.totalTokens)}`
   ];
+  for (const warning of summary.warnings) {
+    lines.push(`Warning: ${warning}`);
+  }
   lines.push("By model:");
   for (const item of summary.breakdown) {
-    lines.push(`${item.model}: ${formatMoney(item.estimatedCost, summary.currency)} (${countLabel(item.turns, "turn")}, ${formatInt(item.tokenTotals.totalTokens)} tokens)`);
+    lines.push(`${item.model}: ${formatMoney(item.estimatedCost, summary.currency)} (${countLabel(item.turns, "turn")}, ${formatInt(item.tokenTotals.totalTokens)} tokens, ${formatPricingSource(item.pricingSource)})`);
   }
-  lines.push("Estimated only. Calculated from local session tokens + manual pricing config. Not official billing.");
+  lines.push("Estimated only. Calculated from local session tokens + built-in pricing and/or local overrides. Not official billing.");
   return lines.join("\n");
 }
 
@@ -304,6 +314,12 @@ function formatMoney(value: number, currency: string): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4
   }).format(value);
+}
+
+function formatPricingSource(value: EstimatedCostSummary["pricingSource"] | CostBreakdown["pricingSource"]): string {
+  if (value === "manual") return "manual";
+  if (value === "built-in") return "built-in estimate";
+  return "manual + built-in estimate";
 }
 
 export function formatResets(data: ResetCreditsResponse, timezone: string): string {
@@ -413,7 +429,8 @@ export function toJsonCost(summary: EstimatedCostSummary, timezone: string): Rec
       total_tokens: summary.tokenTotals.totalTokens
     },
     breakdown: summary.breakdown,
-    disclaimer: "Estimated only. Calculated from local session tokens + manual pricing config. Not official billing."
+    warnings: summary.warnings,
+    disclaimer: "Estimated only. Calculated from local session tokens + built-in pricing and/or local overrides. Not official billing."
   };
 }
 

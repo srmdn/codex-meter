@@ -2,7 +2,7 @@
 
 Terminal quota meter and local usage analytics for OpenAI Codex.
 
-v0.4.2 keeps the default quota meter fast and compact, adds separate local-history analytics commands, and improves first-run onboarding for manual estimated cost.
+v0.4.3 keeps the default quota meter fast and compact, adds separate local-history analytics commands, and lets `cost` work immediately with built-in estimated pricing plus optional local overrides.
 
 The default command is cache-first for speed. Use `--live` to force fresh reads.
 
@@ -115,7 +115,7 @@ By default, `codex-meter` prefers cached usage data for a fast terminal response
 
 `stats`, `models`, and `activity` read local Codex session history from `~/.codex/sessions/`. They do not change current quota state or call external services.
 
-`cost` reads the same local session history, plus a manual pricing file. It is always labeled estimated and is not official billing.
+`cost` reads the same local session history, then uses built-in estimated pricing and optional local pricing overrides. It is always labeled estimated and is not official billing.
 
 ## Estimated Cost Setup
 
@@ -150,7 +150,7 @@ First cost run:
    ~/.config/codex-meter/pricing.json
    ```
 
-3. Edit the placeholder `null` values with your manual prices.
+3. Optionally replace the placeholder `null` values with your manual prices.
 
 4. Rerun:
 
@@ -163,7 +163,8 @@ First run behavior:
 - `codex-meter cost --pricing` checks `~/.config/codex-meter/pricing.json`
 - if the file is missing, `codex-meter` creates a starter file there
 - it scaffolds models detected from your local Codex session history
-- it stops and tells you to replace placeholder `null` values before trusting estimated cost
+- it still returns an estimate immediately using built-in estimated pricing
+- you can later replace `null` values with your own manual overrides
 
 Example `stats` output:
 
@@ -183,7 +184,7 @@ Example starter pricing file created on first run:
 {
   "version": "2026-07-06",
   "currency": "USD",
-  "note": "Replace placeholder null values with your manual prices before trusting estimated cost.",
+  "note": "Null values fall back to codex-meter built-in estimated pricing. Replace them with your own manual prices to override.",
   "placeholder": true,
   "models": {
     "gpt-5.4": {
@@ -202,7 +203,7 @@ Example starter pricing file created on first run:
 }
 ```
 
-Example filled manual pricing file:
+Example filled manual override file:
 
 ```json
 {
@@ -219,13 +220,16 @@ Example filled manual pricing file:
 }
 ```
 
-The starter file uses placeholder `null` values on purpose. `codex-meter cost` stays strict and fails until every model in your local history has real manual prices.
+The starter file uses placeholder `null` values on purpose. `codex-meter cost` now falls back to built-in estimated pricing for those models. Add manual numbers only when you want to override the built-in estimate.
 
 How estimated cost is calculated:
 
 - Reads local Codex session history from `~/.codex/sessions/`
 - Groups token usage by model
-- Applies your manual per-model prices:
+- Resolves pricing in this order:
+  - manual per-model override from your pricing file
+  - built-in estimated pricing fallback
+- Applies per-model prices:
   - `input_per_1m`
   - `cached_input_per_1m`
   - `output_per_1m`
@@ -245,21 +249,28 @@ estimated cost =
 Example `cost` output:
 
 ```text
-Estimated cost (manual pricing config)
+pricing: starter file created at /Users/said/.config/codex-meter/pricing.json
+using built-in estimated pricing until you replace placeholder null values
+
+Estimated cost (built-in pricing)
 Timezone: Asia/Jakarta (WIB, UTC+07:00)
-Pricing version: 2026-07-05
+Pricing source: built-in estimate
+Pricing version: 2026-07-06 + builtin-estimated-2026-07-06
 Total estimated cost: $12.34
 Total tokens: 1,234,567
+Warning: pricing file contains placeholder/null values; built-in estimated pricing is used where needed
+Warning: built-in estimated pricing used for: gpt-5.4, gpt-5.5
 By model:
-gpt-5.5: $12.34 (84 turns, 1,234,567 tokens)
-Estimated only. Calculated from local session tokens + manual pricing config. Not official billing.
+gpt-5.5: $12.34 (84 turns, 1,234,567 tokens, built-in estimate)
+Estimated only. Calculated from local session tokens + built-in pricing and/or local overrides. Not official billing.
 ```
 
 Disclaimer:
 
-- Estimated cost uses local Codex session tokens plus your manual pricing file.
+- Estimated cost uses local Codex session tokens plus built-in estimated pricing and optional local overrides.
 - It is not official OpenAI billing.
-- If a model appears in local history without a matching manual price, `codex-meter cost` fails instead of guessing.
+- Built-in pricing is an estimate and may lag actual billing changes.
+- If a model appears in local history without a matching built-in estimate or manual override, `codex-meter cost` fails instead of guessing.
 
 ## Doctor
 
