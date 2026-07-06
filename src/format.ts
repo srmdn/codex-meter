@@ -308,12 +308,11 @@ function countLabel(count: number, singular: string): string {
 }
 
 function formatMoney(value: number, currency: string): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
+  const amount = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 4
+    maximumFractionDigits: 2
   }).format(value);
+  return currency === "USD" ? `$${amount}` : `${currency} ${amount}`;
 }
 
 function formatPricingSource(value: EstimatedCostSummary["pricingSource"] | CostBreakdown["pricingSource"]): string {

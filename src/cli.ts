@@ -145,6 +145,7 @@ function helpText(): string {
     "first run:",
     "  codex-meter",
     "  codex-meter cost --pricing",
+    "  creates default pricing file and still shows an estimate",
     "",
     "notes:",
     `  cost uses local session history + built-in estimates + local overrides`,

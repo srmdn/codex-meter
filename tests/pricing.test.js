@@ -30,6 +30,7 @@ test("cost formatters label manual estimate clearly", async () => {
   const pricing = await readPricingConfig(pricingFile);
   const cost = estimateCost(summary, pricing);
   assert.match(formatEstimatedCost(cost, "UTC"), /Estimated cost \(manual pricing config\)/);
+  assert.match(formatEstimatedCost(cost, "UTC"), /\$0\.01/);
   assert.match(formatEstimatedCost(cost, "UTC"), /Not official billing/);
   assert.equal(toJsonCost(cost, "UTC").estimated, true);
   assert.equal(toJsonCost(cost, "UTC").pricing_source, "manual");

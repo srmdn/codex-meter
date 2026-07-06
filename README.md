@@ -17,7 +17,7 @@ node dist/cli.js resets
 node dist/cli.js stats
 node dist/cli.js models
 node dist/cli.js activity
-node dist/cli.js cost --pricing tests/fixtures/pricing.synthetic.json
+node dist/cli.js cost --pricing
 node dist/cli.js doctor
 node dist/cli.js version
 node dist/cli.js --help
@@ -119,7 +119,7 @@ By default, `codex-meter` prefers cached usage data for a fast terminal response
 
 ## Estimated Cost Setup
 
-`codex-meter cost` uses the default pricing path when you run `codex-meter cost --pricing`.
+`codex-meter cost --pricing` uses the default pricing path:
 
 Default path:
 
@@ -150,9 +150,11 @@ First cost run:
    ~/.config/codex-meter/pricing.json
    ```
 
-3. Optionally replace the placeholder `null` values with your manual prices.
+3. `codex-meter` still returns an estimate immediately using built-in estimated pricing.
 
-4. Rerun:
+4. Optionally replace the placeholder `null` values with your manual prices to override built-in estimates.
+
+5. Rerun if you want to see the effect of your overrides:
 
    ```bash
    codex-meter cost --pricing
@@ -165,6 +167,7 @@ First run behavior:
 - it scaffolds models detected from your local Codex session history
 - it still returns an estimate immediately using built-in estimated pricing
 - you can later replace `null` values with your own manual overrides
+- `codex-meter cost --pricing ./pricing.json` and `--pricing-file ./pricing.json` are custom-path override modes; those paths are not auto-created for you
 
 Example `stats` output:
 
@@ -220,7 +223,7 @@ Example filled manual override file:
 }
 ```
 
-The starter file uses placeholder `null` values on purpose. `codex-meter cost` now falls back to built-in estimated pricing for those models. Add manual numbers only when you want to override the built-in estimate.
+The starter file uses placeholder `null` values on purpose. `codex-meter cost` falls back to built-in estimated pricing for those models. Add manual numbers only when you want to override the built-in estimate.
 
 How estimated cost is calculated:
 
