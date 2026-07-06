@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { SafeError } from "./errors.js";
 import type { SessionHistorySummary } from "./session-history.js";
 
@@ -42,8 +42,43 @@ export type EstimatedCostSummary = {
   breakdown: CostBreakdown[];
 };
 
+export type StarterPricingFile = {
+  version: string;
+  currency: string;
+  note: string;
+  placeholder: true;
+  models: Record<string, {
+    input_per_1m: null;
+    cached_input_per_1m: null;
+    output_per_1m: null;
+    reasoning_output_per_1m: null;
+  }>;
+};
+
 export function defaultPricingPath(): string {
   return join(homedir(), ".config", "codex-meter", "pricing.json");
+}
+
+export async function writeStarterPricing(path: string, models: string[]): Promise<void> {
+  const uniqueModels = [...new Set(models)].sort((a, b) => a.localeCompare(b));
+  const starter: StarterPricingFile = {
+    version: new Date().toISOString().slice(0, 10),
+    currency: "USD",
+    note: "Replace placeholder null values with your manual prices before trusting estimated cost.",
+    placeholder: true,
+    models: Object.fromEntries(uniqueModels.map((model) => [
+      model,
+      {
+        input_per_1m: null,
+        cached_input_per_1m: null,
+        output_per_1m: null,
+        reasoning_output_per_1m: null
+      }
+    ]))
+  };
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(starter, null, 2)}\n`, "utf8");
 }
 
 export async function readManualPricing(path: string): Promise<ManualPricing> {
@@ -64,6 +99,7 @@ export async function readManualPricing(path: string): Promise<ManualPricing> {
   const version = readString(parsed, "version");
   const currency = readString(parsed, "currency");
   const models = readObject(parsed, "models");
+  const placeholder = readBoolean(parsed, "placeholder");
   if (!version) throw new SafeError("pricing: missing version");
   if (!currency) throw new SafeError("pricing: missing currency");
   if (!models) throw new SafeError("pricing: missing models");
@@ -78,6 +114,9 @@ export async function readManualPricing(path: string): Promise<ManualPricing> {
     const output = readNumber(value, "output_per_1m");
     const reasoning = readOptionalNumber(value, "reasoning_output_per_1m");
     if (input === null || cachedInput === null || output === null) {
+      if (placeholder) {
+        throw new SafeError(`pricing: replace placeholder prices for ${model} in ${path}`);
+      }
       throw new SafeError(`pricing: incomplete prices for ${model}`);
     }
     validated[model] = {
@@ -162,4 +201,9 @@ function readOptionalNumber(value: unknown, key: string): number | null {
   if (!value || typeof value !== "object" || !(key in value)) return null;
   const item = (value as Record<string, unknown>)[key];
   return typeof item === "number" && Number.isFinite(item) ? item : null;
+}
+
+function readBoolean(value: unknown, key: string): boolean {
+  if (!value || typeof value !== "object" || !(key in value)) return false;
+  return (value as Record<string, unknown>)[key] === true;
 }

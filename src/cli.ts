@@ -23,10 +23,10 @@ import { repoBranchLabel } from "./git.js";
 import { fetchResetCredits } from "./reset-credits.js";
 import { getUsageSnapshot, readUsageSnapshot, type UsageSnapshot, type UsageSnapshotResult } from "./app-server.js";
 import { readSessionHistorySummary } from "./session-history.js";
-import { defaultPricingPath, estimateCost, readManualPricing } from "./pricing.js";
+import { defaultPricingPath, estimateCost, readManualPricing, writeStarterPricing } from "./pricing.js";
 
 type CliOptions = {
-  command: "default" | "resets" | "usage" | "doctor" | "stats" | "models" | "activity" | "cost";
+  command: "default" | "status" | "resets" | "usage" | "doctor" | "stats" | "models" | "activity" | "cost" | "version" | "help";
   json: boolean;
   help: boolean;
   live: boolean;
@@ -35,7 +35,20 @@ type CliOptions = {
   usageCacheTtlSeconds: number;
   authPath: string;
   pricingPath: string | null;
+  pricingFlagUsed: boolean;
 };
+
+const VERSION = "0.4.2";
+const DOCS_URL = "https://github.com/srmdn/codex-meter";
+const BANNER = [
+  "  ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗",
+  " ██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝",
+  " ██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ",
+  " ██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ",
+  " ╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗",
+  "  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝",
+  "                meter"
+].join("\n");
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
@@ -47,7 +60,8 @@ function parseArgs(argv: string[]): CliOptions {
     cacheTtlSeconds: 300,
     usageCacheTtlSeconds: 30,
     authPath: process.env.CODEX_METER_AUTH_FILE || defaultAuthPath(),
-    pricingPath: process.env.CODEX_METER_PRICING_FILE || null
+    pricingPath: process.env.CODEX_METER_PRICING_FILE || null,
+    pricingFlagUsed: false
   };
   const commands: CliOptions["command"][] = [];
 
@@ -63,10 +77,17 @@ function parseArgs(argv: string[]): CliOptions {
       const value = optionalValue(argv, i + 1);
       if (value) i += 1;
       options.pricingPath = value ?? defaultPricingPath();
+      options.pricingFlagUsed = true;
     }
-    else if (arg === "--pricing-file") options.pricingPath = requireValue(argv, ++i, "--pricing-file");
-    else if (arg === "--help" || arg === "-h") options.help = true;
-    else if (arg === "resets" || arg === "usage" || arg === "doctor" || arg === "stats" || arg === "models" || arg === "activity" || arg === "cost") {
+    else if (arg === "--pricing-file") {
+      options.pricingPath = requireValue(argv, ++i, "--pricing-file");
+      options.pricingFlagUsed = true;
+    }
+    else if (arg === "--help" || arg === "-h") {
+      options.help = true;
+      options.command = "help";
+    }
+    else if (arg === "help" || arg === "version" || arg === "status" || arg === "resets" || arg === "usage" || arg === "doctor" || arg === "stats" || arg === "models" || arg === "activity" || arg === "cost") {
       commands.push(arg);
       options.command = arg;
     }
@@ -82,6 +103,9 @@ function parseArgs(argv: string[]): CliOptions {
   }
   if (!Number.isFinite(options.usageCacheTtlSeconds) || options.usageCacheTtlSeconds < 0) {
     throw new SafeError("cache: --cache-ttl-usage must be a non-negative number");
+  }
+  if (options.pricingFlagUsed && !options.help && options.command !== "cost") {
+    throw new SafeError("pricing: --pricing and --pricing-file are only valid with `codex-meter cost`");
   }
   validateTimezone(options.timezone);
   return options;
@@ -101,31 +125,42 @@ function optionalValue(argv: string[], index: number): string | null {
 
 function helpText(): string {
   return [
-    "codex-meter v0.4.1",
+    BANNER,
     "",
-    "Usage:",
-    "  codex-meter [--json] [--timezone IANA_ZONE]",
-    "  codex-meter resets [--json] [--timezone IANA_ZONE]",
-    "  codex-meter usage [--json] [--live] [--timezone IANA_ZONE]",
-    "  codex-meter doctor [--timezone IANA_ZONE]",
-    "  codex-meter stats [--json] [--timezone IANA_ZONE]",
-    "  codex-meter models [--json] [--timezone IANA_ZONE]",
-    "  codex-meter activity [--json] [--timezone IANA_ZONE]",
-    "  codex-meter cost [--json] --pricing [path] [--timezone IANA_ZONE]",
+    "terminal quota meter for codex",
     "",
-    "Options:",
-    "  --cache-ttl seconds        Cache reset-credit response, default 300",
-    "  --cache-ttl-usage seconds  Cache usage response, default 30",
-    "  --live                     Bypass cache and force fresh reads",
-    "  --auth-file path           Override ~/.codex/auth.json for tests/debugging",
-    "  --pricing [path]           Manual pricing JSON, default ~/.config/codex-meter/pricing.json",
-    "  --pricing-file path        Explicit manual pricing JSON path"
+    "commands:",
+    "  status         current quota + reset credits",
+    "  usage          detailed 5h / weekly windows",
+    "  resets         reset-credit expiry list",
+    "  stats          local token totals and summary",
+    "  models         most-used local models",
+    "  activity       daily local token activity",
+    "  cost           estimated cost from local tokens + manual pricing",
+    "                 --pricing [path]   use default or custom pricing file",
+    "  doctor         auth, app-server, cache, pricing checks",
+    "  version        show version",
+    "  help           show this help",
+    "",
+    "first run:",
+    "  codex-meter",
+    "  codex-meter cost --pricing",
+    "",
+    "notes:",
+    `  cost uses local session history + manual pricing file`,
+    "  estimated only, not official billing",
+    `  default pricing path: ${defaultPricingPath()}`,
+    "",
+    `docs:  ${DOCS_URL}`
   ].join("\n");
 }
 
 async function run(options: CliOptions): Promise<string> {
-  if (options.help) {
+  if (options.help || options.command === "help") {
     return helpText();
+  }
+  if (options.command === "version") {
+    return `codex-meter v${VERSION}`;
   }
   if (options.command === "usage") {
     const usageResult = await safeReadUsage({
@@ -158,6 +193,19 @@ async function run(options: CliOptions): Promise<string> {
       throw new SafeError("pricing: provide --pricing or --pricing-file for estimated cost");
     }
     const history = await readSessionHistorySummary(options.timezone);
+    if (options.pricingPath === defaultPricingPath()) {
+      try {
+        await readManualPricing(options.pricingPath);
+      } catch (error) {
+        const message = toSafeError(error).message;
+        if (message.includes("file not found")) {
+          await writeStarterPricing(options.pricingPath, history.models.map((model) => model.model));
+          throw new SafeError(
+            `pricing: starter file created at ${options.pricingPath}\nreplace placeholder null values, then run:\n  codex-meter cost --pricing`
+          );
+        }
+      }
+    }
     const pricing = await readManualPricing(options.pricingPath);
     const cost = estimateCost(history, pricing);
     if (options.json) {
@@ -168,7 +216,7 @@ async function run(options: CliOptions): Promise<string> {
 
   const auth = await readAuth(options.authPath);
   const usagePromise =
-    options.command === "default"
+    options.command === "default" || options.command === "status"
       ? safeReadUsage({
           useCache: !options.live,
           cacheTtlSeconds: options.usageCacheTtlSeconds,
@@ -237,6 +285,13 @@ async function doctor(options: CliOptions): Promise<string> {
     lines.push(`timezone: ok (${options.timezone})`);
   } catch (error) {
     lines.push(toSafeError(error).message);
+  }
+
+  try {
+    await access(defaultPricingPath());
+    lines.push(`pricing file: ok (${defaultPricingPath()})`);
+  } catch {
+    lines.push(`pricing file: missing (${defaultPricingPath()})`);
   }
 
   try {

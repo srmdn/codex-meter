@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { formatEstimatedCost, toJsonCost } from "../dist/format.js";
-import { defaultPricingPath, estimateCost, readManualPricing } from "../dist/pricing.js";
+import { defaultPricingPath, estimateCost, readManualPricing, writeStarterPricing } from "../dist/pricing.js";
 import { readSessionHistorySummary } from "../dist/session-history.js";
 
 const fixtureDir = "tests/fixtures/sessions.synthetic";
@@ -45,4 +47,11 @@ test("defaultPricingPath targets user config location", () => {
 
 test("readManualPricing reports missing file path clearly", async () => {
   await assert.rejects(() => readManualPricing("tests/fixtures/does-not-exist.json"), /file not found/);
+});
+
+test("starter pricing file fails with explicit placeholder warning", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-meter-pricing-"));
+  const path = join(dir, "pricing.json");
+  await writeStarterPricing(path, ["gpt-5.5"]);
+  await assert.rejects(() => readManualPricing(path), /replace placeholder prices for gpt-5\.5/);
 });
