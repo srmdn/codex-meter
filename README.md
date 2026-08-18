@@ -6,6 +6,19 @@ v0.5.0 keeps the default quota meter fast and compact, adds separate local-histo
 
 The default command is cache-first for speed. Use `--live` to force fresh reads.
 
+## Install locally
+
+This project is a local CLI. Build and link it into your shell with:
+
+```bash
+npm install
+npm run build
+npm link
+codex-meter version
+```
+
+`npm link` uses the local build. It does not publish the project to npm.
+
 ## Usage
 
 ```bash
@@ -136,7 +149,7 @@ codex-meter cost --pricing ./pricing.json
 codex-meter cost --pricing-file ./pricing.json
 ```
 
-First cost run:
+First run:
 
 1. Run:
 
@@ -150,24 +163,21 @@ First cost run:
    ~/.config/codex-meter/pricing.json
    ```
 
-3. `codex-meter` still returns an estimate immediately using built-in estimated pricing.
+3. `codex-meter` scaffolds models detected from your local Codex session history.
 
-4. Optionally replace the placeholder `null` values with your manual prices to override built-in estimates.
+4. `codex-meter` still returns an estimate immediately using built-in estimated pricing.
 
-5. Rerun if you want to see the effect of your overrides:
+5. Optionally replace the placeholder `null` values with your manual prices to
+   override built-in estimates.
+
+6. Rerun if you want to see the effect of your overrides:
 
    ```bash
    codex-meter cost --pricing
    ```
 
-First run behavior:
-
-- `codex-meter cost --pricing` checks `~/.config/codex-meter/pricing.json`
-- if the file is missing, `codex-meter` creates a starter file there
-- it scaffolds models detected from your local Codex session history
-- it still returns an estimate immediately using built-in estimated pricing
-- you can later replace `null` values with your own manual overrides
-- `codex-meter cost --pricing ./pricing.json` and `--pricing-file ./pricing.json` are custom-path override modes; those paths are not auto-created for you
+The default path is auto-created when it is missing. Custom paths passed to
+`--pricing` or `--pricing-file` must already exist.
 
 Example `stats` output:
 
@@ -183,9 +193,11 @@ Total tokens: 1,234,567
 
 Example starter pricing file created on first run:
 
+The `version` field records the date when `codex-meter` creates the file.
+
 ```json
 {
-  "version": "2026-07-06",
+  "version": "2026-08-18",
   "currency": "USD",
   "note": "Null values fall back to codex-meter built-in estimated pricing. Replace them with your own manual prices to override.",
   "placeholder": true,
@@ -208,16 +220,18 @@ Example starter pricing file created on first run:
 
 Example filled manual override file:
 
+Manual values take precedence over the built-in estimate for the same model.
+
 ```json
 {
-  "version": "2026-07-05",
+  "version": "2026-08-18",
   "currency": "USD",
   "models": {
     "gpt-5.5": {
-      "input_per_1m": 1.25,
-      "cached_input_per_1m": 0.125,
-      "output_per_1m": 10,
-      "reasoning_output_per_1m": 10
+      "input_per_1m": 5,
+      "cached_input_per_1m": 0.5,
+      "output_per_1m": 30,
+      "reasoning_output_per_1m": 30
     }
   }
 }
@@ -252,13 +266,13 @@ estimated cost =
 Example `cost` output:
 
 ```text
-pricing: starter file created at /Users/said/.config/codex-meter/pricing.json
+pricing: starter file created at ~/.config/codex-meter/pricing.json
 using built-in estimated pricing until you replace placeholder null values
 
 Estimated cost (built-in pricing)
 Timezone: Asia/Jakarta (WIB, UTC+07:00)
 Pricing source: built-in estimate
-Pricing version: 2026-07-06 + builtin-estimated-2026-08-18
+Pricing version: 2026-08-18 + builtin-estimated-2026-08-18
 Total estimated cost: $12.34
 Total tokens: 1,234,567
 Warning: pricing file contains placeholder/null values; built-in estimated pricing is used where needed
@@ -272,9 +286,9 @@ Disclaimer:
 
 - Estimated cost uses local Codex session tokens plus built-in estimated pricing and optional local overrides.
 - It is not official OpenAI billing.
-- Built-in pricing is an API-equivalent estimate based on OpenAI's Standard token prices captured on 2026-08-18. It may lag actual billing changes and does not represent a Codex subscription invoice.
+- Built-in pricing is an API-equivalent estimate based on the Standard token prices in the [OpenAI API pricing documentation](https://developers.openai.com/api/docs/pricing), captured on 2026-08-18. It may lag actual pricing changes and does not represent a Codex subscription invoice.
 - If a model appears in local history without a matching built-in estimate or manual override, it is shown as `unpriced` and excluded from the estimated subtotal instead of guessing.
-- OpenAI documents Codex auto-review as a separate reviewer agent, not as a separately priced API model. `codex-auto-review` therefore remains `unpriced` unless you provide a deliberate local override.
+- OpenAI's [Auto-review documentation](https://learn.chatgpt.com/docs/sandboxing/auto-review) describes auto-review as a separate reviewer agent. Because `codex-auto-review` has no separate API price in the pricing table, it remains `unpriced` unless you provide a deliberate local override.
 
 ## Doctor
 
