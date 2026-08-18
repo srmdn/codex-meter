@@ -2,7 +2,7 @@
 
 Terminal quota meter and local usage analytics for OpenAI Codex.
 
-v0.4.3 keeps the default quota meter fast and compact, adds separate local-history analytics commands, and lets `cost` work immediately with built-in estimated pricing plus optional local overrides.
+v0.5.0 keeps the default quota meter fast and compact, adds separate local-history analytics commands, and lets `cost` work immediately with built-in estimated pricing plus optional local overrides.
 
 The default command is cache-first for speed. Use `--live` to force fresh reads.
 
@@ -258,7 +258,7 @@ using built-in estimated pricing until you replace placeholder null values
 Estimated cost (built-in pricing)
 Timezone: Asia/Jakarta (WIB, UTC+07:00)
 Pricing source: built-in estimate
-Pricing version: 2026-07-06 + builtin-estimated-2026-07-06
+Pricing version: 2026-07-06 + builtin-estimated-2026-08-18
 Total estimated cost: $12.34
 Total tokens: 1,234,567
 Warning: pricing file contains placeholder/null values; built-in estimated pricing is used where needed
@@ -272,8 +272,9 @@ Disclaimer:
 
 - Estimated cost uses local Codex session tokens plus built-in estimated pricing and optional local overrides.
 - It is not official OpenAI billing.
-- Built-in pricing is an estimate and may lag actual billing changes.
-- If a model appears in local history without a matching built-in estimate or manual override, `codex-meter cost` fails instead of guessing.
+- Built-in pricing is an API-equivalent estimate based on OpenAI's Standard token prices captured on 2026-08-18. It may lag actual billing changes and does not represent a Codex subscription invoice.
+- If a model appears in local history without a matching built-in estimate or manual override, it is shown as `unpriced` and excluded from the estimated subtotal instead of guessing.
+- OpenAI documents Codex auto-review as a separate reviewer agent, not as a separately priced API model. `codex-auto-review` therefore remains `unpriced` unless you provide a deliberate local override.
 
 ## Doctor
 

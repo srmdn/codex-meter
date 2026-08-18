@@ -48,5 +48,5 @@ test("cost first run auto-creates starter pricing file at default path", async (
 test("version command prints current version", () => {
   const result = runCli(["version"]);
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /codex-meter v0\.4\.3/);
+  assert.match(result.stdout, /codex-meter v0\.5\.0/);
 });

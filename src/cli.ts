@@ -38,7 +38,7 @@ type CliOptions = {
   pricingFlagUsed: boolean;
 };
 
-const VERSION = "0.4.3";
+const VERSION = "0.5.0";
 const DOCS_URL = "https://github.com/srmdn/codex-meter";
 const BANNER = [
   "  ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗",

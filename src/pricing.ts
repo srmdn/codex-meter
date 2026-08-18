@@ -32,8 +32,8 @@ export type CostBreakdown = {
   model: string;
   turns: number;
   sessions: number;
-  estimatedCost: number;
-  pricingSource: "manual" | "built-in" | "manual+built-in";
+  estimatedCost: number | null;
+  pricingSource: "manual" | "built-in" | "manual+built-in" | "unpriced";
   pricingModel: string;
   tokenTotals: {
     inputTokens: number;
@@ -46,11 +46,12 @@ export type CostBreakdown = {
 
 export type EstimatedCostSummary = {
   estimated: true;
-  pricingSource: "manual" | "built-in" | "manual+built-in";
+  pricingSource: "manual" | "built-in" | "manual+built-in" | "unpriced";
   billingAuthority: "unofficial";
   pricingVersion: string;
   currency: string;
   totalEstimatedCost: number;
+  unpricedModels: string[];
   tokenTotals: SessionHistorySummary["totals"];
   breakdown: CostBreakdown[];
   warnings: string[];
@@ -69,26 +70,26 @@ export type StarterPricingFile = {
   }>;
 };
 
-const BUILTIN_PRICING_VERSION = "builtin-estimated-2026-07-06";
+const BUILTIN_PRICING_VERSION = "builtin-estimated-2026-08-18";
 
 const BUILTIN_PRICING: Record<string, PricingEntry> = {
   "gpt-5.5": {
-    input_per_1m: 1.25,
-    cached_input_per_1m: 0.125,
-    output_per_1m: 10,
-    reasoning_output_per_1m: 10
+    input_per_1m: 5,
+    cached_input_per_1m: 0.5,
+    output_per_1m: 30,
+    reasoning_output_per_1m: 30
   },
   "gpt-5.4": {
-    input_per_1m: 1.25,
-    cached_input_per_1m: 0.125,
-    output_per_1m: 10,
-    reasoning_output_per_1m: 10
+    input_per_1m: 2.5,
+    cached_input_per_1m: 0.25,
+    output_per_1m: 15,
+    reasoning_output_per_1m: 15
   },
   "gpt-5.4-mini": {
-    input_per_1m: 0.25,
-    cached_input_per_1m: 0.025,
-    output_per_1m: 2,
-    reasoning_output_per_1m: 2
+    input_per_1m: 0.75,
+    cached_input_per_1m: 0.075,
+    output_per_1m: 4.5,
+    reasoning_output_per_1m: 4.5
   },
   "gpt-5": {
     input_per_1m: 2.5,
@@ -103,10 +104,28 @@ const BUILTIN_PRICING: Record<string, PricingEntry> = {
     reasoning_output_per_1m: 10
   },
   "gpt-5.3-codex": {
-    input_per_1m: 1.25,
-    cached_input_per_1m: 0.125,
-    output_per_1m: 10,
-    reasoning_output_per_1m: 10
+    input_per_1m: 1.75,
+    cached_input_per_1m: 0.175,
+    output_per_1m: 14,
+    reasoning_output_per_1m: 14
+  },
+  "gpt-5.6-sol": {
+    input_per_1m: 5,
+    cached_input_per_1m: 0.5,
+    output_per_1m: 30,
+    reasoning_output_per_1m: 30
+  },
+  "gpt-5.6-terra": {
+    input_per_1m: 2,
+    cached_input_per_1m: 0.2,
+    output_per_1m: 12,
+    reasoning_output_per_1m: 12
+  },
+  "gpt-5.6-luna": {
+    input_per_1m: 0.2,
+    cached_input_per_1m: 0.02,
+    output_per_1m: 1.2,
+    reasoning_output_per_1m: 1.2
   }
 };
 
@@ -181,14 +200,11 @@ export function estimateCost(summary: SessionHistorySummary, config: PricingConf
   const warnings: string[] = [];
   const builtInModels = new Set<string>();
   const manualModels = new Set<string>();
+  const unpricedModels = new Set<string>();
   let totalEstimatedCost = 0;
 
   for (const model of summary.models) {
     const resolved = resolvePricing(model.model, config);
-    if (!resolved) {
-      throw new SafeError(`pricing: no estimated price available for model: ${model.model}`);
-    }
-
     const tokenTotals = {
       inputTokens: model.inputTokens,
       cachedInputTokens: model.cachedInputTokens,
@@ -196,6 +212,20 @@ export function estimateCost(summary: SessionHistorySummary, config: PricingConf
       reasoningOutputTokens: model.reasoningOutputTokens,
       totalTokens: model.totalTokens
     };
+
+    if (!resolved) {
+      unpricedModels.add(model.model);
+      breakdown.push({
+        model: model.model,
+        turns: model.turns,
+        sessions: model.sessions,
+        estimatedCost: null,
+        pricingSource: "unpriced",
+        pricingModel: model.model,
+        tokenTotals
+      });
+      continue;
+    }
 
     const estimatedCost =
       perMillion(tokenTotals.inputTokens, resolved.entry.input_per_1m) +
@@ -222,12 +252,15 @@ export function estimateCost(summary: SessionHistorySummary, config: PricingConf
     });
   }
 
-  const pricingSource = summarizePricingSource(manualModels.size > 0, builtInModels.size > 0);
+  const pricingSource = summarizePricingSource(manualModels.size > 0, builtInModels.size > 0, unpricedModels.size > 0);
   if (config?.placeholder) {
     warnings.push("pricing file contains placeholder/null values; built-in estimated pricing is used where needed");
   }
   if (builtInModels.size > 0) {
     warnings.push(`built-in estimated pricing used for: ${[...builtInModels].sort().join(", ")}`);
+  }
+  if (unpricedModels.size > 0) {
+    warnings.push(`unpriced models excluded from total: ${[...unpricedModels].sort().join(", ")}`);
   }
   if (config?.note) {
     warnings.push(config.note);
@@ -244,8 +277,9 @@ export function estimateCost(summary: SessionHistorySummary, config: PricingConf
       : BUILTIN_PRICING_VERSION,
     currency: config?.currency ?? "USD",
     totalEstimatedCost,
+    unpricedModels: [...unpricedModels].sort(),
     tokenTotals: summary.totals,
-    breakdown: breakdown.sort((a, b) => b.estimatedCost - a.estimatedCost || a.model.localeCompare(b.model)),
+    breakdown: breakdown.sort((a, b) => (b.estimatedCost ?? -1) - (a.estimatedCost ?? -1) || a.model.localeCompare(b.model)),
     warnings
   };
 }
@@ -286,7 +320,7 @@ function resolvePricing(model: string, config: PricingConfig | null): {
       output_per_1m: merged.output_per_1m,
       reasoning_output_per_1m: merged.reasoning_output_per_1m
     },
-    pricingSource: summarizePricingSource(usesManual, usesBuiltIn),
+    pricingSource: summarizeKnownPricingSource(usesManual, usesBuiltIn),
     pricingModel: builtIn?.model ?? model
   };
 }
@@ -300,7 +334,12 @@ function findBuiltInPricing(model: string): { model: string; entry: PricingEntry
   return null;
 }
 
-function summarizePricingSource(usesManual: boolean, usesBuiltIn: boolean): "manual" | "built-in" | "manual+built-in" {
+function summarizePricingSource(usesManual: boolean, usesBuiltIn: boolean, hasUnpriced: boolean): "manual" | "built-in" | "manual+built-in" | "unpriced" {
+  if (!usesBuiltIn && hasUnpriced) return "unpriced";
+  return summarizeKnownPricingSource(usesManual, usesBuiltIn);
+}
+
+function summarizeKnownPricingSource(usesManual: boolean, usesBuiltIn: boolean): "manual" | "built-in" | "manual+built-in" {
   if (usesManual && usesBuiltIn) return "manual+built-in";
   if (usesManual) return "manual";
   return "built-in";

@@ -65,3 +65,57 @@ test("starter pricing file can be read and falls back to built-in pricing", asyn
   assert.equal(cost.pricingSource, "built-in");
   assert.match(cost.warnings.join("\n"), /placeholder\/null values/);
 });
+
+test("unknown models are shown as unpriced and excluded from the subtotal", async () => {
+  const summary = await readSessionHistorySummary("UTC", fixtureDir);
+  summary.models.push({
+    model: "codex-auto-review",
+    turns: 1,
+    sessions: 1,
+    inputTokens: 1_000_000,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    totalTokens: 1_000_000
+  });
+
+  const cost = estimateCost(summary, null);
+  const item = cost.breakdown.find((entry) => entry.model === "codex-auto-review");
+  assert.equal(item?.estimatedCost, null);
+  assert.equal(item?.pricingSource, "unpriced");
+  assert.deepEqual(cost.unpricedModels, ["codex-auto-review"]);
+  assert.match(cost.warnings.join("\n"), /unpriced models excluded from total/);
+});
+
+test("built-in GPT-5.6 pricing uses official standard token rates", () => {
+  const summary = {
+    sessionsScanned: 1,
+    sessionsWithUsage: 1,
+    activeDays: 1,
+    firstActivityAt: "2026-08-18T00:00:00.000Z",
+    lastActivityAt: "2026-08-18T00:00:00.000Z",
+    totals: {
+      inputTokens: 1_000_000,
+      cachedInputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      reasoningOutputTokens: 0,
+      totalTokens: 3_000_000
+    },
+    models: [{
+      model: "gpt-5.6-terra",
+      turns: 1,
+      sessions: 1,
+      inputTokens: 1_000_000,
+      cachedInputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      reasoningOutputTokens: 0,
+      totalTokens: 3_000_000
+    }],
+    days: []
+  };
+
+  const cost = estimateCost(summary, null);
+  assert.equal(cost.totalEstimatedCost, 14.2);
+  assert.equal(cost.breakdown[0].pricingSource, "built-in");
+  assert.equal(cost.pricingVersion, "builtin-estimated-2026-08-18");
+});

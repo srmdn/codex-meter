@@ -245,13 +245,15 @@ export function formatEstimatedCost(summary: EstimatedCostSummary, timezone: str
       ? "Estimated cost (manual pricing config)"
       : summary.pricingSource === "built-in"
         ? "Estimated cost (built-in pricing)"
-        : "Estimated cost (manual overrides + built-in pricing)";
+        : summary.pricingSource === "manual+built-in"
+          ? "Estimated cost (manual overrides + built-in pricing)"
+          : "Estimated cost (unpriced models)";
   const lines = [
     title,
     `Timezone: ${timezoneLabel(timezone)}`,
     `Pricing source: ${formatPricingSource(summary.pricingSource)}`,
     `Pricing version: ${summary.pricingVersion}`,
-    `Total estimated cost: ${formatMoney(summary.totalEstimatedCost, summary.currency)}`,
+    `Total estimated cost${summary.unpricedModels.length > 0 ? " (priced models only)" : ""}: ${formatMoney(summary.totalEstimatedCost, summary.currency)}`,
     `Total tokens: ${formatInt(summary.tokenTotals.totalTokens)}`
   ];
   for (const warning of summary.warnings) {
@@ -259,7 +261,8 @@ export function formatEstimatedCost(summary: EstimatedCostSummary, timezone: str
   }
   lines.push("By model:");
   for (const item of summary.breakdown) {
-    lines.push(`${item.model}: ${formatMoney(item.estimatedCost, summary.currency)} (${countLabel(item.turns, "turn")}, ${formatInt(item.tokenTotals.totalTokens)} tokens, ${formatPricingSource(item.pricingSource)})`);
+    const amount = item.estimatedCost === null ? "unpriced" : formatMoney(item.estimatedCost, summary.currency);
+    lines.push(`${item.model}: ${amount} (${countLabel(item.turns, "turn")}, ${formatInt(item.tokenTotals.totalTokens)} tokens, ${formatPricingSource(item.pricingSource)})`);
   }
   lines.push("Estimated only. Calculated from local session tokens + built-in pricing and/or local overrides. Not official billing.");
   return lines.join("\n");
@@ -318,6 +321,7 @@ function formatMoney(value: number, currency: string): string {
 function formatPricingSource(value: EstimatedCostSummary["pricingSource"] | CostBreakdown["pricingSource"]): string {
   if (value === "manual") return "manual";
   if (value === "built-in") return "built-in estimate";
+  if (value === "unpriced") return "unpriced";
   return "manual + built-in estimate";
 }
 
@@ -420,6 +424,7 @@ export function toJsonCost(summary: EstimatedCostSummary, timezone: string): Rec
     pricing_version: summary.pricingVersion,
     currency: summary.currency,
     total_estimated_cost: summary.totalEstimatedCost,
+    unpriced_models: summary.unpricedModels,
     token_totals: {
       input_tokens: summary.tokenTotals.inputTokens,
       cached_input_tokens: summary.tokenTotals.cachedInputTokens,
